@@ -40,7 +40,12 @@ class Pantry(context: Context) {
             Item("Volvic 1,5 L", 0.0, "Flasche", minQty = 6.0),
             Item("Grüner Tee", 0.0, "Packung", minQty = 1.0),
             Item("Schwarzer Tee", 0.0, "Packung", minQty = 1.0),
-            Item("Energy Drink", 0.0, "Dose", minQty = 4.0),
+            Item("Energy Drink Zero", 0.0, "Dose", minQty = 4.0),
+            Item("Zero-Getränk (Cola Zero o.ä.)", 0.0, "Flasche", minQty = 2.0),
+            Item("High-Protein-Salamisticks", 0.0, "Packung", minQty = 1.0),
+            Item("Proteinriegel", 0.0, "Stück", minQty = 4.0),
+            Item("Maiswaffeln gesalzen", 0.0, "Packung", minQty = 1.0),
+            Item("Popcorn süß oder Karamell", 0.0, "Packung", minQty = 1.0),
         )
         private const val BUFFER = 1.2 // 20 % Puffer
 

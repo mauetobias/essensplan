@@ -55,7 +55,8 @@ class PlanGenerator(private val context: Context) {
             ${health.asText()}
             Ziel: ${settings.goal}
             Nicht gewünscht: ${settings.dislikes}
-            Getränke: Wasser nur Volvic, dazu grüner und schwarzer Tee, Energy Drinks. Getränke NICHT in die Zutaten aufnehmen, die verwaltet die App selbst.
+            Getränke: grundsätzlich alles zuckerfrei (Zero). Wasser nur Volvic, dazu grüner und schwarzer Tee, Energy Drinks Zero. Getränke und Snacks NICHT in die Zutaten aufnehmen, die verwaltet die App selbst.
+            Snacks: isst gern Snacks (High-Protein-Salamisticks, Proteinriegel, Maiswaffeln mit Salz, süßes und Karamell-Popcorn). Plane täglich 1 bis 2 Snacks daraus als Mahlzeit ein und rechne ihre kcal ins Tagesziel ein.
             Lagerplatz: ${settings.storage}
 
             Tagesziele (fest berechnet, ±10 % einhalten):
@@ -100,7 +101,7 @@ class PlanGenerator(private val context: Context) {
         settings.lastShopping = JSONArray().apply { shopping.forEach { put(JSONObject().put("n", it.first).put("s", it.second)) } }.toString()
 
         progress("Vergleiche Angebote …")
-        val rec = runCatching { Offers(settings.zip, settings.stores.split(",")).recommend(shopping.map { it.first }) }
+        val rec = runCatching { Offers(settings.zip.ifBlank { LocationZip.current(context).orEmpty() }, settings.stores.split(",")).recommend(shopping.map { it.first }) }
             .onFailure { warnings += "Angebote: ${it.message}" }.getOrNull()
 
         var added = 0

@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
 
                         Button({ hcLauncher.launch(HealthRepo.PERMISSIONS) }) { Text("Health Connect freigeben (Waage + Garmin)") }
                         Button({ calLauncher.launch(Manifest.permission.READ_CALENDAR) }) { Text("Kalender freigeben") }
+                        Button({ calLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }) { Text("Standort freigeben (PLZ für Angebote)") }
 
                         Section("KI")
                         Field("Claude API-Key", s.claudeKey, secret = true) { s.claudeKey = it }
@@ -53,7 +54,7 @@ class MainActivity : ComponentActivity() {
                         Field("Passwort", s.bringPassword, secret = true) { s.bringPassword = it }
 
                         Section("Supermärkte")
-                        Field("Deine PLZ", s.zip, number = true) { s.zip = it }
+                        Field("PLZ (leer = aus Handystandort)", s.zip, number = true) { s.zip = it }
                         Field("Märkte in deiner Nähe (Komma)", s.stores) { s.stores = it }
                         Field("Lagerplatz", s.storage) { s.storage = it }
                         Button({ startActivity(Intent(this@MainActivity, VorratActivity::class.java)) }) { Text("Vorrat ansehen und bearbeiten") }

@@ -28,7 +28,7 @@ Jeder Push auf `main` baut über GitHub Actions automatisch eine APK.
 * **Einkauf erledigt** bucht die letzte Liste in den Vorrat.
 * **Verbrauch**: die Zutaten der geplanten Tage werden nach Ablauf des Tages automatisch abgezogen.
 * **Puffer**: nachgekauft wird erst, wenn der Bestand den Bedarf plus 20 % nicht deckt.
-* **Immer da**: Volvic 1,5 L, grüner Tee, schwarzer Tee, Energy Drinks mit Mindestbestand. Fällt der Bestand darunter, kommen sie auf die Liste. Mengen im Vorrat mit + und − anpassen.
+* **Immer da**: Volvic 1,5 L, grüner Tee, schwarzer Tee, Energy Drinks Zero, Zero-Getränke sowie Snacks (Salamisticks, Proteinriegel, Maiswaffeln, Popcorn) mit Mindestbestand. Alle Getränke zuckerfrei. Fällt der Bestand darunter, kommen sie auf die Liste. Mengen im Vorrat mit + und − anpassen.
 * Wenig Lagerplatz ist hinterlegt: kleine Packungen, Zutaten werden über mehrere Gerichte geteilt.
 
 ## Einrichtung in der App
@@ -36,7 +36,7 @@ Jeder Push auf `main` baut über GitHub Actions automatisch eine APK.
 1. Health Connect: AFit Health und Garmin Connect müssen dort Daten **schreiben** dürfen. In der App dann „Health Connect freigeben“ und „Kalender freigeben“.
 2. Claude-Key (console.anthropic.com) und Gemini-Key (aistudio.google.com, privates Konto).
 3. YAZIO- und Bring-Login (YAZIO nur mit E-Mail und Passwort, nicht über Google/Apple).
-4. PLZ und Märkte in deiner Nähe.
+4. Standort freigeben: die PLZ kommt automatisch vom Handy (oder fest eintragen). Märkte in deiner Nähe anpassen.
 5. Widget „Essensplan“ auf den Homescreen ziehen.
 
 Alles wird verschlüsselt nur auf dem Handy gespeichert.
