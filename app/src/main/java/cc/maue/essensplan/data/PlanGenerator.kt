@@ -1,21 +1,25 @@
 package cc.maue.essensplan.data
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
-/** Holt alle Daten, lässt die KI planen und schiebt die Einkaufsliste nach Bring. */
+/** Holt alle Daten, lässt die KI planen, gleicht mit dem Vorrat ab, sucht Angebote, schiebt nach Bring. */
 class PlanGenerator(private val context: Context) {
 
-    data class Output(val markdown: String, val bringAdded: Int, val provider: String, val warnings: List<String>)
+    data class Output(val text: String, val bringAdded: Int, val provider: String, val warnings: List<String>)
 
     suspend fun run(from: LocalDate, to: LocalDate, sendToBring: Boolean, progress: (String) -> Unit): Output {
         val settings = Settings(context)
+        val pantry = Pantry(context)
         val warnings = mutableListOf<String>()
         val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
+
+        pantry.consumePastDays()
 
         progress("Lese Waage und Garmin …")
         val health = runCatching { HealthRepo(context).snapshot() }
@@ -24,10 +28,8 @@ class PlanGenerator(private val context: Context) {
         if (health.weightKg == null) warnings += "Kein Gewicht in Health Connect gefunden, nutze Schätzwert."
 
         progress("Lese Kalender …")
-        val events = runCatching {
-            CalendarRepo(context).events(from, to, settings.sportKeywords.split(","))
-        }.onFailure { warnings += "Kalender: ${it.message}" }.getOrElse { emptyList() }
-
+        val events = runCatching { CalendarRepo(context).events(from, to, settings.sportKeywords.split(",")) }
+            .onFailure { warnings += "Kalender: ${it.message}" }.getOrElse { emptyList() }
         val targets = Energy.targets(days, events, health, settings)
 
         progress("Lade Rezepte aus YAZIO …")
@@ -38,49 +40,68 @@ class PlanGenerator(private val context: Context) {
         val fmt = DateTimeFormatter.ofPattern("dd.MM.")
         val dayLines = targets.joinToString("\n") { t ->
             val wd = t.day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN)
-            "- $wd ${t.day.format(fmt)}: ${t.kcal} kcal, ${t.proteinG} g Protein" + (if (t.note.isNotBlank()) " (${t.note})" else "")
+            "- ${t.day} ($wd): ${t.kcal} kcal, ${t.proteinG} g Protein" + (if (t.note.isNotBlank()) " (${t.note})" else "")
         }
         val recipeText = if (recipes.isEmpty()) "Keine Rezepte verfügbar, schlage einfache eigene Gerichte vor." else
             recipes.joinToString("\n") { r ->
                 "- ${r.name}: ${r.kcal ?: "?"} kcal, ${r.proteinG ?: "?"} g Protein pro Portion; Zutaten (${r.servings} Portionen): ${r.ingredients.joinToString(", ")}"
             }
 
-        val system = """
-            Du bist ein Ernährungsplaner. Antworte ausschließlich mit gültigem JSON, ohne Markdown-Codeblock.
-            Schreibe auf Deutsch und benutze keine Gedankenstriche.
-        """.trimIndent()
-
+        val system = "Du bist ein Ernährungsplaner. Antworte ausschließlich mit gültigem JSON, ohne Markdown-Codeblock. Deutsch, keine Gedankenstriche."
         val user = """
-            Erstelle einen Essensplan und eine Einkaufsliste für ${days.size} Tag(e).
+            Erstelle einen Essensplan für ${days.size} Tag(e).
 
             Körperdaten:
             ${health.asText()}
             Ziel: ${settings.goal}
             Nicht gewünscht: ${settings.dislikes}
+            Getränke: Wasser nur Volvic, dazu grüner und schwarzer Tee, Energy Drinks. Getränke NICHT in die Zutaten aufnehmen, die verwaltet die App selbst.
+            Lagerplatz: ${settings.storage}
 
-            Tagesziele (bereits aus Grundumsatz, Garmin und Kalender berechnet, bitte einhalten, ±10 %):
+            Tagesziele (fest berechnet, ±10 % einhalten):
             $dayLines
 
-            Rezepte aus YAZIO (bevorzugt verwenden, gern Reste am Folgetag einplanen):
+            Zu Hause vorhanden:
+            ${pantry.describe()}
+
+            Rezepte aus YAZIO (bevorzugt verwenden):
             $recipeText
 
             Regeln:
-            - An Sporttagen Kohlenhydrate vor und Protein nach der Einheit einplanen; Termine im Tagesverlauf berücksichtigen (z.B. Messe: mitnehmbare Mahlzeiten).
-            - Einkaufsliste zusammenfassen, in haushaltsüblichen Mengen, nur für den Zeitraum; Grundvorräte (Salz, Öl, Gewürze) weglassen.
-            - Bei nur 1 bis 2 Tagen: kleine Mengen, nichts was verdirbt.
+            - Vorräte zuerst aufbrauchen, Reste am Folgetag einplanen, Zutaten über mehrere Gerichte teilen, damit wenig übrig bleibt.
+            - An Sporttagen Kohlenhydrate vor und Protein nach der Einheit; Termine im Tagesverlauf berücksichtigen.
+            - Pro Tag ALLE verbrauchten Zutaten mit Menge als Zahl und Einheit (g, ml, Stück) auflisten, auch Grundvorrat.
+            - Mengen in Supermarkt-Größen denken (z.B. 1 Packung Hähnchen = 400 g).
 
-            JSON-Format:
-            {"tage":[{"datum":"TT.MM.","kcal_ziel":0,"mahlzeiten":[{"name":"","uhrzeit":"","rezept":"","kcal":0,"protein_g":0}]}],
-             "einkauf":[{"artikel":"","menge":""}],
+            JSON:
+            {"tage":[{"datum":"YYYY-MM-DD","mahlzeiten":[{"name":"","uhrzeit":"","rezept":"","kcal":0,"protein_g":0}],
+                      "zutaten":[{"name":"","menge":0,"einheit":"g"}]}],
              "hinweise":""}
         """.trimIndent()
 
         val result = LlmClient(settings).complete(system, user)
-        val plan = JSONObject(result.text.substringAfter("{").let { "{$it" }.substringBeforeLast("}") + "}")
+        val plan = JSONObject("{" + result.text.substringAfter("{").substringBeforeLast("}") + "}")
+        val tage = plan.optJSONArray("tage") ?: JSONArray()
 
-        val shopping = plan.optJSONArray("einkauf")?.let { a ->
-            (0 until a.length()).map { a.getJSONObject(it).let { o -> o.optString("artikel") to o.optString("menge") } }
-        }.orEmpty().filter { it.first.isNotBlank() }
+        // Verbrauch merken und Gesamtbedarf bilden
+        val usage = mutableListOf<Pantry.Usage>()
+        for (i in 0 until tage.length()) {
+            val t = tage.getJSONObject(i)
+            val day = runCatching { LocalDate.parse(t.optString("datum")) }.getOrElse { days.getOrElse(i) { from } }
+            val z = t.optJSONArray("zutaten") ?: continue
+            for (j in 0 until z.length()) z.getJSONObject(j).let {
+                usage += Pantry.Usage(day, it.optString("name"), it.optDouble("menge", 1.0), it.optString("einheit", "Stück"))
+            }
+        }
+        val needed = usage.groupBy { Pantry.norm(it.name) + "|" + it.unit }
+            .map { (_, l) -> Triple(l.first().name, l.sumOf { it.qty }, l.first().unit) }
+        val shopping = pantry.shoppingNeeds(needed)
+        pantry.planUsage(usage)
+        settings.lastShopping = JSONArray().apply { shopping.forEach { put(JSONObject().put("n", it.first).put("s", it.second)) } }.toString()
+
+        progress("Vergleiche Angebote …")
+        val rec = runCatching { Offers(settings.zip, settings.stores.split(",")).recommend(shopping.map { it.first }) }
+            .onFailure { warnings += "Angebote: ${it.message}" }.getOrNull()
 
         var added = 0
         if (sendToBring && shopping.isNotEmpty()) {
@@ -89,26 +110,43 @@ class PlanGenerator(private val context: Context) {
                 .onFailure { warnings += "Bring: ${it.message}" }.getOrDefault(0)
         }
 
-        val md = toMarkdown(plan, shopping)
-        settings.lastPlan = md
+        val text = buildString {
+            for (i in 0 until tage.length()) {
+                val t = tage.getJSONObject(i)
+                val d = runCatching { LocalDate.parse(t.optString("datum")) }.getOrNull()
+                val target = targets.firstOrNull { it.day == d }
+                appendLine("${d?.format(fmt) ?: t.optString("datum")}  (Ziel ${target?.kcal ?: "?"} kcal)")
+                val m = t.optJSONArray("mahlzeiten") ?: JSONArray()
+                for (j in 0 until m.length()) m.getJSONObject(j).let {
+                    appendLine("  ${it.optString("uhrzeit")}  ${it.optString("name")}: ${it.optString("rezept")} · ${it.optInt("kcal")} kcal · ${it.optInt("protein_g")} g P")
+                }
+                appendLine()
+            }
+            appendLine("Einkauf (Vorrat schon abgezogen):")
+            if (shopping.isEmpty()) appendLine("  nichts, alles da")
+            shopping.forEach { appendLine("  • ${it.first} ${it.second}") }
+            rec?.let { appendLine(); append(it.text) }
+            plan.optString("hinweise").takeIf { it.isNotBlank() }?.let { appendLine(); appendLine(it) }
+        }
+        settings.lastPlan = text
         settings.lastPlanTitle = "${from.format(fmt)} bis ${to.format(fmt)}"
-        return Output(md, added, result.provider, warnings)
+        return Output(text, added, result.provider, warnings)
     }
 
-    private fun toMarkdown(plan: JSONObject, shopping: List<Pair<String, String>>) = buildString {
-        val tage = plan.optJSONArray("tage")
-        if (tage != null) for (i in 0 until tage.length()) {
-            val t = tage.getJSONObject(i)
-            appendLine("${t.optString("datum")}  (Ziel ${t.optInt("kcal_ziel")} kcal)")
-            val m = t.optJSONArray("mahlzeiten") ?: continue
-            for (j in 0 until m.length()) {
-                val x = m.getJSONObject(j)
-                appendLine("  ${x.optString("uhrzeit")}  ${x.optString("name")}: ${x.optString("rezept")} · ${x.optInt("kcal")} kcal · ${x.optInt("protein_g")} g P")
-            }
-            appendLine()
+    /** "Einkauf erledigt": letzte Liste in den Vorrat buchen. */
+    fun markShoppingDone() {
+        val a = JSONArray(Settings(context).lastShopping)
+        val bought = (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            val spec = o.optString("s").trim()
+            val qty = spec.substringBefore(" ").replace(",", ".").toDoubleOrNull() ?: 1.0
+            val unit = spec.substringAfter(" ", "Stück").ifBlank { "Stück" }
+            Triple(o.getString("n"), qty, unit)
         }
-        appendLine("Einkauf:")
-        shopping.forEach { appendLine("  • ${it.first} ${it.second}") }
-        plan.optString("hinweise").takeIf { it.isNotBlank() }?.let { appendLine(); appendLine(it) }
+        Pantry(context).addPurchased(bought)
+        // Leer markierter Grundvorrat ist jetzt wieder da
+        val p = Pantry(context); val list = p.items()
+        bought.forEach { b -> p.find(list, b.first)?.takeIf { it.staple }?.empty = false }
+        p.save(list)
+        Settings(context).lastShopping = "[]"
     }
 }

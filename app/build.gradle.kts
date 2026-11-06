@@ -12,8 +12,22 @@ android {
         applicationId = "cc.maue.essensplan"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = "0.2." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+    }
+
+    // Fester Schlüssel im (privaten) Repo, damit neue Versionen sich über die alte installieren lassen
+    signingConfigs {
+        create("fixed") {
+            storeFile = file("release.jks")
+            storePassword = "essensplan"
+            keyAlias = "essensplan"
+            keyPassword = "essensplan"
+        }
+    }
+    buildTypes {
+        getByName("debug") { signingConfig = signingConfigs.getByName("fixed") }
+        getByName("release") { signingConfig = signingConfigs.getByName("fixed"); isMinifyEnabled = false }
     }
 
     buildFeatures { compose = true }

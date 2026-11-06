@@ -36,6 +36,13 @@ class Settings(context: Context) {
     var dislikes get() = s("dislikes", "kein Kaffee"); set(v) = put("dislikes", v)
     var sportKeywords get() = s("sport_kw", "crossfit,training,gym,laufen,run,wod,sport"); set(v) = put("sport_kw", v)
 
+    var zip get() = s("zip"); set(v) = put("zip", v)
+    var stores get() = s("stores", "REWE,Edeka,Lidl,Aldi,Kaufland,Penny,Netto"); set(v) = put("stores", v)
+    var storage get() = s("storage", "wenig Lagerplatz, kleine Packungen, lieber öfter einkaufen"); set(v) = put("storage", v)
+
+    /** Letzte Einkaufsliste als JSON, damit "Einkauf erledigt" sie in den Vorrat buchen kann. */
+    var lastShopping get() = s("last_shopping", "[]"); set(v) = put("last_shopping", v)
+
     var lastPlan get() = s("last_plan"); set(v) = put("last_plan", v)
     var lastPlanTitle get() = s("last_plan_title"); set(v) = put("last_plan_title", v)
 }

@@ -52,6 +52,12 @@ class MainActivity : ComponentActivity() {
                         Field("E-Mail", s.bringEmail) { s.bringEmail = it }
                         Field("Passwort", s.bringPassword, secret = true) { s.bringPassword = it }
 
+                        Section("Supermärkte")
+                        Field("Deine PLZ", s.zip, number = true) { s.zip = it }
+                        Field("Märkte in deiner Nähe (Komma)", s.stores) { s.stores = it }
+                        Field("Lagerplatz", s.storage) { s.storage = it }
+                        Button({ startActivity(Intent(this@MainActivity, VorratActivity::class.java)) }) { Text("Vorrat ansehen und bearbeiten") }
+
                         Section("Profil")
                         Field("Geburtsjahr", s.birthYear, number = true) { s.birthYear = it }
                         Field("Größe in cm", s.heightCm, number = true) { s.heightCm = it }

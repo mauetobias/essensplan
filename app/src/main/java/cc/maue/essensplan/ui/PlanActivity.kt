@@ -61,13 +61,21 @@ class PlanActivity : ComponentActivity() {
                                         PlanGenerator(this@PlanActivity).run(from, to, bring) { s -> lifecycleScope.launch { status = s } }
                                     }
                                     status = "Fertig mit ${out.provider}" + (if (bring) ", ${out.bringAdded} Artikel in Bring" else "")
-                                    result = out.markdown + (if (out.warnings.isNotEmpty()) "\n\nHinweise:\n" + out.warnings.joinToString("\n") else "")
+                                    result = out.text + (if (out.warnings.isNotEmpty()) "\n\nHinweise:\n" + out.warnings.joinToString("\n") else "")
                                     PlanWidget().updateAll(this@PlanActivity)
                                 } catch (e: Exception) {
                                     status = "Fehler: ${e.message}"
                                 } finally { busy = false }
                             }
                         }) { Text(if (busy) "Läuft …" else "Plan erstellen") }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(enabled = !busy, onClick = {
+                                PlanGenerator(this@PlanActivity).markShoppingDone()
+                                status = "Einkauf ist im Vorrat gebucht"
+                            }) { Text("Einkauf erledigt") }
+                            OutlinedButton({ startActivity(android.content.Intent(this@PlanActivity, VorratActivity::class.java)) }) { Text("Vorrat") }
+                        }
 
                         if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodyMedium)
                         if (result.isNotBlank()) Text(result, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
