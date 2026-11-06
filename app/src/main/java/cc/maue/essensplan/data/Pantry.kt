@@ -37,7 +37,7 @@ class Pantry(context: Context) {
             "Currypulver", "Zimt", "Backpulver", "Gemüsebrühe", "Tomatenmark",
         )
         val DEFAULT_ALWAYS = listOf(
-            Item("Volvic 1,5 L", 0.0, "Flasche", minQty = 6.0),
+            Item("Volvic 1,5 L (Sixpack)", 0.0, "Sixpack", minQty = 1.0),
             Item("Grüner Tee", 0.0, "Packung", minQty = 1.0),
             Item("Schwarzer Tee", 0.0, "Packung", minQty = 1.0),
             Item("Energy Drink Zero", 0.0, "Dose", minQty = 4.0),

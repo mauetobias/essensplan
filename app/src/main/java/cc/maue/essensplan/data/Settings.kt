@@ -38,7 +38,7 @@ class Settings(context: Context) {
 
     var zip get() = s("zip"); set(v) = put("zip", v)
     var stores get() = s("stores", "REWE,Edeka,Lidl,Aldi,Kaufland,Penny,Netto"); set(v) = put("stores", v)
-    var storage get() = s("storage", "wenig Lagerplatz, kleine Packungen, lieber öfter einkaufen"); set(v) = put("storage", v)
+    var storage get() = s("storage", "Sehr wenig Platz: nur ein kleiner Unterbaukühlschrank mit winzigem Eisfach (kaum Tiefkühlware), zwei volle Hängeschränke, Getränke stehen im Flur (max. 2 Sixpacks Volvic). Kleine Packungen, Frisches nur für 2 bis 3 Tage, lieber öfter einkaufen."); set(v) = put("storage", v)
 
     /** Letzte Einkaufsliste als JSON, damit "Einkauf erledigt" sie in den Vorrat buchen kann. */
     var lastShopping get() = s("last_shopping", "[]"); set(v) = put("last_shopping", v)
