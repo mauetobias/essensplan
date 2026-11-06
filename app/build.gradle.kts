@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "cc.maue.essensplan"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "cc.maue.essensplan"
