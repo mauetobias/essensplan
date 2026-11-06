@@ -26,15 +26,15 @@ class PlanWidget : GlanceAppWidget() {
         provideContent {
             Column(
                 modifier = GlanceModifier.fillMaxSize().cornerRadius(20.dp)
-                    .background(ColorProvider(Color(0xFF1E2A22))).padding(12.dp)
+                    .background(ColorProvider(Color(0xFF16A34A))).padding(12.dp)
                     .clickable(actionStartActivity<PlanActivity>()),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("🥗 Essensplan", style = TextStyle(color = ColorProvider(Color.White), fontSize = 16.sp, fontWeight = FontWeight.Bold))
+                Text("🥗  Essensplan", style = TextStyle(color = ColorProvider(Color.White), fontSize = 16.sp, fontWeight = FontWeight.Bold))
                 Text(
                     if (last.isBlank()) "Tippen zum Erstellen" else "Zuletzt: $last",
-                    style = TextStyle(color = ColorProvider(Color(0xFFB5C9BB)), fontSize = 12.sp),
+                    style = TextStyle(color = ColorProvider(Color(0xFFD9F99D)), fontSize = 12.sp),
                 )
             }
         }

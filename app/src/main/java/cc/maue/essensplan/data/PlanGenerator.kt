@@ -58,6 +58,9 @@ class PlanGenerator(private val context: Context) {
             Getränke: grundsätzlich alles zuckerfrei (Zero). Wasser nur Volvic, dazu grüner und schwarzer Tee, Energy Drinks Zero. Getränke und Snacks NICHT in die Zutaten aufnehmen, die verwaltet die App selbst.
             Snacks: isst gern Snacks (High-Protein-Salamisticks, Proteinriegel, Maiswaffeln mit Salz, süßes und Karamell-Popcorn). Plane täglich 1 bis 2 Snacks daraus als Mahlzeit ein und rechne ihre kcal ins Tagesziel ein.
             Lagerplatz: ${settings.storage}
+            Essensrhythmus: ${settings.rhythm}
+            Typische Einkäufe laut REWE-Kassenbons (Vorlieben, gern berücksichtigen):
+            ${PurchaseHistory(context).summary()}
 
             Tagesziele (fest berechnet, ±10 % einhalten):
             $dayLines
@@ -101,7 +104,7 @@ class PlanGenerator(private val context: Context) {
         settings.lastShopping = JSONArray().apply { shopping.forEach { put(JSONObject().put("n", it.first).put("s", it.second)) } }.toString()
 
         progress("Vergleiche Angebote …")
-        val rec = runCatching { Offers(settings.zip.ifBlank { LocationZip.current(context).orEmpty() }, settings.stores.split(",")).recommend(shopping.map { it.first }) }
+        val rec = runCatching { Offers(settings.zip.ifBlank { LocationZip.current(context).orEmpty() }, settings.stores.split(","), settings.preferredStore).recommend(shopping.map { it.first }) }
             .onFailure { warnings += "Angebote: ${it.message}" }.getOrNull()
 
         var added = 0
@@ -111,24 +114,25 @@ class PlanGenerator(private val context: Context) {
                 .onFailure { warnings += "Bring: ${it.message}" }.getOrDefault(0)
         }
 
-        val text = buildString {
-            for (i in 0 until tage.length()) {
-                val t = tage.getJSONObject(i)
-                val d = runCatching { LocalDate.parse(t.optString("datum")) }.getOrNull()
-                val target = targets.firstOrNull { it.day == d }
-                appendLine("${d?.format(fmt) ?: t.optString("datum")}  (Ziel ${target?.kcal ?: "?"} kcal)")
-                val m = t.optJSONArray("mahlzeiten") ?: JSONArray()
-                for (j in 0 until m.length()) m.getJSONObject(j).let {
-                    appendLine("  ${it.optString("uhrzeit")}  ${it.optString("name")}: ${it.optString("rezept")} · ${it.optInt("kcal")} kcal · ${it.optInt("protein_g")} g P")
-                }
-                appendLine()
-            }
-            appendLine("Einkauf (Vorrat schon abgezogen):")
-            if (shopping.isEmpty()) appendLine("  nichts, alles da")
-            shopping.forEach { appendLine("  • ${it.first} ${it.second}") }
-            rec?.let { appendLine(); append(it.text) }
-            plan.optString("hinweise").takeIf { it.isNotBlank() }?.let { appendLine(); appendLine(it) }
+        // Strukturiertes Ergebnis für die Oberfläche
+        val view = JSONObject()
+        val vDays = JSONArray()
+        for (i in 0 until tage.length()) {
+            val t = tage.getJSONObject(i)
+            val d = runCatching { LocalDate.parse(t.optString("datum")) }.getOrNull()
+            val target = targets.firstOrNull { it.day == d }
+            vDays.put(JSONObject()
+                .put("label", d?.let { it.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.GERMAN) + ", " + it.format(fmt) } ?: t.optString("datum"))
+                .put("kcal", target?.kcal ?: 0).put("protein", target?.proteinG ?: 0).put("note", target?.note.orEmpty())
+                .put("meals", t.optJSONArray("mahlzeiten") ?: JSONArray()))
         }
+        view.put("days", vDays)
+        view.put("shopping", JSONArray().apply { shopping.forEach { put(JSONObject().put("n", it.first).put("s", it.second)) } })
+        view.put("rec", rec?.text.orEmpty())
+        view.put("hints", plan.optString("hinweise"))
+        view.put("provider", result.provider)
+        view.put("warnings", JSONArray(warnings))
+        val text = view.toString()
         settings.lastPlan = text
         settings.lastPlanTitle = "${from.format(fmt)} bis ${to.format(fmt)}"
         return Output(text, added, result.provider, warnings)

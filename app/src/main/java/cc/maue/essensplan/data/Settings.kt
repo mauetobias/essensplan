@@ -36,8 +36,12 @@ class Settings(context: Context) {
     var dislikes get() = s("dislikes", "kein Kaffee"); set(v) = put("dislikes", v)
     var sportKeywords get() = s("sport_kw", "crossfit,training,gym,laufen,run,wod,sport"); set(v) = put("sport_kw", v)
 
+    var rhythm get() = s("rhythm", "Kein klassisches Frühstück/Mittag/Abend. Schläft gern länger, daher spätes Frühstück (ca. 10 bis 11 Uhr), über den Tag Snacks, abends eine gute, große Hauptmahlzeit. Nur abweichen, wenn der Tag es braucht (Training, Messe, frühe Termine)."); set(v) = put("rhythm", v)
+    var preferredStore get() = s("pref_store", "REWE"); set(v) = put("pref_store", v)
+    var storeNotes get() = s("store_notes", "Zu Fuß: Edeka, Netto Marken-Discount (der orange, nicht der mit dem Hund). Ein Parkplatz: REWE, Aldi und dm zusammen. In der Nähe: Lidl."); set(v) = put("store_notes", v)
+
     var zip get() = s("zip"); set(v) = put("zip", v)
-    var stores get() = s("stores", "REWE,Edeka,Lidl,Aldi,Kaufland,Penny,Netto"); set(v) = put("stores", v)
+    var stores get() = s("stores", "REWE,Edeka,Netto Marken-Discount,Lidl,Aldi,dm"); set(v) = put("stores", v)
     var storage get() = s("storage", "Sehr wenig Platz: nur ein kleiner Unterbaukühlschrank mit winzigem Eisfach (kaum Tiefkühlware), zwei volle Hängeschränke, Getränke stehen im Flur (max. 2 Sixpacks Volvic). Kleine Packungen, Frisches nur für 2 bis 3 Tage, lieber öfter einkaufen."); set(v) = put("storage", v)
 
     /** Letzte Einkaufsliste als JSON, damit "Einkauf erledigt" sie in den Vorrat buchen kann. */

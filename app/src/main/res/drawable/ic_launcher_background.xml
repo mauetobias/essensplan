@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="0" android:startY="0" android:endX="108" android:endY="108"
+                android:startColor="#22C55E" android:endColor="#0E7A55" />
+        </aapt:attr>
+    </path>
+    <!-- weicher Lichtfleck oben links -->
+    <path android:fillColor="#33FFFFFF"
+        android:pathData="M-10,-10 C30,-10 70,10 60,40 C50,70 10,60 -10,50 Z" />
+</vector>

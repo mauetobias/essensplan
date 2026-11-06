@@ -11,23 +11,26 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.activity.enableEdgeToEdge
 import cc.maue.essensplan.data.Pantry
 
 /** Was ist zu Hause: Grundvorrat an/aus, Mengen korrigieren, Mindestbestand für "Immer da". */
 class VorratActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         val pantry = Pantry(this)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            FreshTheme {
                 var list by remember { mutableStateOf(pantry.items().toList()) }
                 var newName by remember { mutableStateOf("") }
                 fun update(f: (MutableList<Pantry.Item>) -> Unit) {
                     val l = pantry.items(); f(l); pantry.save(l); list = l.toList()
                 }
-                Surface(Modifier.fillMaxSize()) {
+                Surface(Modifier.fillMaxSize(), color = Fresh.Bg) {
+                    Column {
+                        HeroHeader("Vorrat", "Was ist gerade zu Hause", "🥫")
                     Column(Modifier.padding(16.dp)) {
-                        Text("Vorrat", style = MaterialTheme.typography.headlineSmall)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedTextField(newName, { newName = it }, label = { Text("Artikel hinzufügen") }, modifier = Modifier.weight(1f), singleLine = true)
                             TextButton({ if (newName.isNotBlank()) { update { it += Pantry.Item(newName.trim(), 1.0, "Stück") }; newName = "" } }) { Text("+") }
@@ -59,6 +62,7 @@ class VorratActivity : ComponentActivity() {
                                 }
                             }
                         }
+                    }
                     }
                 }
             }

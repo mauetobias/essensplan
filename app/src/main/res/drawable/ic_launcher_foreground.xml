@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Schale mit Blatt und Orangenscheibe: frisch, gesund, fit -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Blatt -->
+    <path android:fillColor="#D9F99D"
+        android:pathData="M54,52 C46,40 48,28 62,22 C70,32 66,46 54,52 Z" />
+    <path android:strokeColor="#0E7A55" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M54,52 C57,42 59,33 62,24" />
+    <!-- Orangenscheibe -->
+    <path android:fillColor="#FB923C"
+        android:pathData="M38,52 a9,9 0 1,1 18,0 Z" />
+    <path android:fillColor="#FED7AA"
+        android:pathData="M40.5,52 a6.5,6.5 0 1,1 13,0 Z" />
+    <path android:strokeColor="#FB923C" android:strokeWidth="1"
+        android:pathData="M47,52 L47,45.5 M47,52 L42.5,47.5 M47,52 L51.5,47.5" />
+    <!-- Schale -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M30,53 H78 C78,67 67,78 54,78 C41,78 30,67 30,53 Z" />
+    <path android:fillColor="#E7F8EE"
+        android:pathData="M30,53 H78 C78,55 77.7,57 77.2,59 H30.8 C30.3,57 30,55 30,53 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M45,78 H63 V81 C63,82.1 62.1,83 61,83 H47 C45.9,83 45,82.1 45,81 Z" />
+</vector>

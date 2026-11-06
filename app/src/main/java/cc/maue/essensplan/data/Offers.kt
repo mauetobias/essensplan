@@ -9,7 +9,7 @@ import org.json.JSONObject
  * Für jede Zeile der Einkaufsliste werden Angebote gesucht und je Markt summiert.
  * Ergebnis: Empfehlung, in welchem Markt (oder welcher Kombi aus zwei Märkten) du am meisten sparst.
  */
-class Offers(private val zip: String, private val stores: List<String>) {
+class Offers(private val zip: String, private val stores: List<String>, private val preferred: String = "REWE") {
 
     data class Offer(val item: String, val store: String, val product: String, val price: Double, val oldPrice: Double?, val until: String)
     data class Recommendation(val text: String, val offers: List<Offer>)
@@ -33,7 +33,9 @@ class Offers(private val zip: String, private val stores: List<String>) {
         return (0 until res.length()).mapNotNull { i ->
             val o = res.getJSONObject(i)
             val store = o.optJSONArray("advertisers")?.optJSONObject(0)?.optString("name") ?: return@mapNotNull null
-            if (stores.isNotEmpty() && stores.none { store.contains(it.trim(), ignoreCase = true) }) return@mapNotNull null
+            if (stores.isNotEmpty() && stores.none { store.contains(it.trim().substringBefore(" "), ignoreCase = true) }) return@mapNotNull null
+            // Netto mit dem Hund (Stavenhagen) ist nicht gemeint
+            if (store.contains("netto", true) && !store.contains("marken", true) && !store.equals("Netto", true)) return@mapNotNull null
             val price = o.optDouble("price").takeIf { !it.isNaN() } ?: return@mapNotNull null
             Offer(
                 item = q, store = store,
@@ -56,12 +58,20 @@ class Offers(private val zip: String, private val stores: List<String>) {
 
         fun saving(o: Offer) = (o.oldPrice ?: o.price) - o.price + 0.01 // jeder Treffer zählt etwas
         val perStore = best.groupBy { it.store }.mapValues { (_, l) -> l.sumOf { saving(it) } to l }
-        val ranked = perStore.entries.sortedByDescending { it.value.first }
+        // Lieblingsmarkt bekommt 1,50 € Bonus, er muss also nur "fast" mithalten
+        fun score(store: String, v: Double) = v + if (store.contains(preferred, true)) 1.5 else 0.0
+        val ranked = perStore.entries.sortedByDescending { score(it.key, it.value.first) }
         val top = ranked.first()
 
         val text = buildString {
             appendLine("Empfehlung: ${top.key} (${top.value.second.size} Artikel im Angebot, ca. %.2f € gespart)".format(top.value.first))
             top.value.second.forEach { appendLine("  • ${it.item}: ${it.product} %.2f €".format(it.price) + (it.oldPrice?.let { o -> " statt %.2f €".format(o) } ?: "") + (if (it.until.isNotBlank()) " bis ${it.until}" else "")) }
+            val parkplatz = listOf("rewe", "aldi", "dm")
+            if (parkplatz.any { top.key.contains(it, true) }) {
+                val extra = ranked.filter { e -> e.key != top.key && parkplatz.any { e.key.contains(it, true) } }
+                    .flatMap { it.value.second }.filter { o -> top.value.second.none { it.item == o.item } }
+                if (extra.isNotEmpty()) appendLine("Gleicher Parkplatz, gleich mitnehmen: " + extra.joinToString { "${it.item} bei ${it.store} %.2f €".format(it.price) })
+            }
             ranked.drop(1).take(2).forEach { e ->
                 val extra = e.value.second.filter { o -> top.value.second.none { it.item == o.item } }
                 if (extra.isNotEmpty()) appendLine("Lohnt sich zusätzlich, wenn du vorbeikommst: ${e.key} für " + extra.joinToString { it.item })

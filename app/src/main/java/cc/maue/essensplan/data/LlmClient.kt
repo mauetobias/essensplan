@@ -32,12 +32,31 @@ class LlmClient(private val settings: Settings) {
         return Result(gemini(system, user), if (claudeError != null) "Gemini (Claude nicht verfügbar)" else "Gemini")
     }
 
-    private fun claude(system: String, user: String): String {
+    /** PDF lesen lassen (eBons). Claude zuerst, sonst Gemini. */
+    fun readPdf(base64: String, prompt: String): String {
+        if (settings.claudeKey.isNotBlank()) runCatching {
+            val content = JSONArray()
+                .put(JSONObject().put("type", "document").put("source",
+                    JSONObject().put("type", "base64").put("media_type", "application/pdf").put("data", base64)))
+                .put(JSONObject().put("type", "text").put("text", prompt))
+            return claudeRaw(JSONArray().put(JSONObject().put("role", "user").put("content", content)), "Antworte nur mit JSON.")
+        }
+        val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray()
+            .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "application/pdf").put("data", base64)))
+            .put(JSONObject().put("text", prompt)))))
+            .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
+        return geminiRaw(body)
+    }
+
+    private fun claude(system: String, user: String): String =
+        claudeRaw(JSONArray().put(JSONObject().put("role", "user").put("content", user)), system)
+
+    private fun claudeRaw(messages: JSONArray, system: String): String {
         val body = JSONObject()
             .put("model", settings.claudeModel)
             .put("max_tokens", 8000)
             .put("system", system)
-            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
+            .put("messages", messages)
         val req = Request.Builder().url("https://api.anthropic.com/v1/messages")
             .header("x-api-key", settings.claudeKey)
             .header("anthropic-version", "2023-06-01")
@@ -51,12 +70,13 @@ class LlmClient(private val settings: Settings) {
         }
     }
 
-    private fun gemini(system: String, user: String): String {
-        val body = JSONObject()
-            .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
-            .put("contents", JSONArray().put(JSONObject().put("role", "user")
-                .put("parts", JSONArray().put(JSONObject().put("text", user)))))
-            .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
+    private fun gemini(system: String, user: String): String = geminiRaw(JSONObject()
+        .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+        .put("contents", JSONArray().put(JSONObject().put("role", "user")
+            .put("parts", JSONArray().put(JSONObject().put("text", user)))))
+        .put("generationConfig", JSONObject().put("responseMimeType", "application/json")))
+
+    private fun geminiRaw(body: JSONObject): String {
         val url = "https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent"
         val req = Request.Builder().url(url).header("x-goog-api-key", settings.geminiKey)
             .post(body.toString().toRequestBody(json)).build()

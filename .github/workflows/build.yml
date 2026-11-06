@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  MAU_E_TOKEN: ${{ secrets.MAU_E_TOKEN }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,3 +33,34 @@ jobs:
           body: ${{ github.event.head_commit.message }}
           files: Essensplan.apk
           make_latest: true
+
+      # Automatisch auf mau-e.com veröffentlichen (wie bei Geldfluss im Blick).
+      # Braucht einmalig das Secret MAU_E_TOKEN (Fine-grained Token mit Schreibrecht auf mauetobias/mau-e).
+      - name: Auf mau-e.com veröffentlichen
+        if: ${{ env.MAU_E_TOKEN != '' }}
+        env:
+          MAU_E_TOKEN: ${{ secrets.MAU_E_TOKEN }}
+          GH_TOKEN: ${{ secrets.MAU_E_TOKEN }}
+          RUN: ${{ github.run_number }}
+        run: |
+          TAG="essensplan-v0.2.$RUN"
+          gh release create "$TAG" Essensplan.apk -R mauetobias/mau-e --title "Essensplan 0.2.$RUN" --notes "Automatischer Build" --latest=false
+          SIZE=$(python3 -c "import os;print(f'{os.path.getsize(\"Essensplan.apk\")/1048576:.1f}'.replace('.',','))")
+          SHA=$(sha256sum Essensplan.apk | cut -d' ' -f1)
+          git clone --depth 1 "https://x-access-token:${MAU_E_TOKEN}@github.com/mauetobias/mau-e" site
+          cat > site/data/essensplan.json <<JSON
+          {
+            "version": "0.2.$RUN",
+            "code": $RUN,
+            "url": "https://github.com/mauetobias/mau-e/releases/download/$TAG/Essensplan.apk",
+            "size": "$SIZE MB",
+            "sha256": "$SHA"
+          }
+          JSON
+          cd site
+          git config user.name "Essensplan-Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/essensplan.json
+          git commit -m "Essensplan 0.2.$RUN veröffentlicht"
+          git pull --rebase origin main
+          git push
