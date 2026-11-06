@@ -58,18 +58,44 @@ class LlmClient(private val settings: Settings) {
 
     private fun gemini(system: String, user: String): String = geminiRaw(textBody(user, system))
 
-    private fun geminiRaw(body: JSONObject, retried: Boolean = false): String {
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent"
+    /**
+     * Gemini aufrufen. Bei Überlastung (503/500/429) bis zu 3 Mal mit Pause neu versuchen,
+     * danach auf ein anderes Flash-Modell ausweichen. Abgeschaltete Modelle (404) werden ersetzt.
+     */
+    private fun geminiRaw(body: JSONObject): String {
+        var lastError: Exception? = null
+        val tried = mutableSetOf<String>()
+        repeat(3) { round ->
+            val model = settings.geminiModel
+            tried += model
+            for (attempt in 0 until 3) {
+                try { return geminiCall(model, body) } catch (e: HttpException) {
+                    lastError = e
+                    when (e.code) {
+                        404 -> {
+                            val msg = e.message.orEmpty()
+                            val next = Regex("models/(gemini[\\w.\\-]+)").findAll(msg).map { it.groupValues[1] }.firstOrNull { it !in tried }
+                                ?: alternativeModels().firstOrNull { it !in tried }
+                            if (next != null) { settings.geminiModel = next; return@repeat } else throw e
+                        }
+                        429, 500, 502, 503, 504 -> Thread.sleep(longArrayOf(3000, 8000, 15000)[attempt])
+                        else -> throw e
+                    }
+                }
+            }
+            // Dauerhaft überlastet: anderes Modell für diesen Aufruf probieren
+            val alt = alternativeModels().firstOrNull { it !in tried } ?: return@repeat
+            try { return geminiCall(alt, body) } catch (e: Exception) { lastError = e; tried += alt }
+        }
+        throw lastError ?: IllegalStateException("Gemini nicht erreichbar")
+    }
+
+    private fun geminiCall(model: String, body: JSONObject): String {
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
         val req = Request.Builder().url(url).header("x-goog-api-key", settings.geminiKey)
             .post(body.toString().toRequestBody(json)).build()
         Http.client.newCall(req).execute().use {
             val txt = it.body?.string().orEmpty()
-            if (it.code == 404 && !retried) {
-                // Modell abgeschaltet: empfohlenes Modell aus der Fehlermeldung oder neuestes Flash-Modell nehmen
-                val suggested = Regex("models/(gemini[\\w.\\-]+)").findAll(txt).map { m -> m.groupValues[1] }
-                    .firstOrNull { m -> m != settings.geminiModel } ?: newestFlash()
-                if (suggested != null) { settings.geminiModel = suggested; return geminiRaw(body, retried = true) }
-            }
             if (!it.isSuccessful) throw HttpException(it.code, txt)
             val parts = JSONObject(txt).getJSONArray("candidates").getJSONObject(0)
                 .getJSONObject("content").getJSONArray("parts")
@@ -77,15 +103,17 @@ class LlmClient(private val settings: Settings) {
         }
     }
 
-    /** Neuestes verfügbares Flash-Modell, das Text erzeugen kann. */
-    private fun newestFlash(): String? = runCatching {
+    /** Andere nutzbare Modelle, beste zuerst (Flash vor Flash-Lite, neueste Version zuerst). */
+    private fun alternativeModels(): List<String> = runCatching {
         val req = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200")
             .header("x-goog-api-key", settings.geminiKey).build()
         val arr = Http.client.newCall(req).execute().use { JSONObject(it.body!!.string()).getJSONArray("models") }
         (0 until arr.length()).map { arr.getJSONObject(it) }
             .filter { m -> m.optJSONArray("supportedGenerationMethods").toString().contains("generateContent") }
             .map { it.getString("name").removePrefix("models/") }
-            .filter { it.contains("flash") && !it.contains("lite") && !it.contains("image") && !it.contains("tts") && !it.contains("preview") }
-            .maxByOrNull { n -> Regex("(\\d+(\\.\\d+)?)").find(n)?.value?.toDoubleOrNull() ?: 0.0 }
-    }.getOrNull()
+            .filter { it.contains("flash") && !it.contains("image") && !it.contains("tts") && !it.contains("audio") && !it.contains("live") }
+            .sortedWith(compareBy<String>({ it.contains("lite") }, { it.contains("preview") || it.contains("exp") })
+                .thenByDescending { n -> Regex("(\\d+(\\.\\d+)?)").find(n)?.value?.toDoubleOrNull() ?: 0.0 })
+    }.getOrDefault(emptyList())
+
 }

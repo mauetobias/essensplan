@@ -75,7 +75,15 @@ class PlanActivity : ComponentActivity() {
                             status = ""; tab = 0
                             PlanWidget().updateAll(this@PlanActivity)
                         } catch (e: Exception) {
-                            status = "Hat nicht geklappt: ${e.message}"
+                            status = when {
+                                (e.message ?: "").let { m -> m.startsWith("HTTP 503") || m.startsWith("HTTP 429") || m.startsWith("HTTP 500") } ->
+                                    "Gemini ist gerade überlastet. Ich habe es mehrmals versucht. Bitte in ein paar Minuten nochmal auf „Neuer Plan“ tippen."
+                                (e.message ?: "").startsWith("HTTP 400") || (e.message ?: "").startsWith("HTTP 403") ->
+                                    "Der Gemini-Schlüssel wird nicht akzeptiert. Bitte in den Einstellungen prüfen."
+                                e is java.net.UnknownHostException -> "Kein Internet."
+                                e is java.net.SocketTimeoutException -> "Die KI hat zu lange gebraucht. Bitte nochmal versuchen, gern mit kürzerem Zeitraum."
+                                else -> "Hat nicht geklappt: " + (e.message ?: "").take(200)
+                            }
                         } finally { busy = false }
                     }
                 }
