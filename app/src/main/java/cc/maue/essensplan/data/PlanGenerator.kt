@@ -78,9 +78,15 @@ class PlanGenerator(private val context: Context) {
             - Mengen in Supermarkt-Größen denken (z.B. 1 Packung Hähnchen = 400 g).
 
             JSON:
-            {"tage":[{"datum":"YYYY-MM-DD","mahlzeiten":[{"name":"","uhrzeit":"","rezept":"","kcal":0,"protein_g":0}],
+            {"tage":[{"datum":"YYYY-MM-DD",
+                      "mahlzeiten":[{"name":"Spätes Frühstück|Snack|Abendessen|…","uhrzeit":"HH:MM","rezept":"Name des Gerichts",
+                                     "kcal":0,"protein_g":0,"kh_g":0,"fett_g":0,"dauer_min":0,"portionen":1,
+                                     "zutaten":["150 g Magerquark", "…"],
+                                     "schritte":["Kurzer, klarer Kochschritt", "…"],
+                                     "tipp":""}],
                       "zutaten":[{"name":"","menge":0,"einheit":"g"}]}],
              "hinweise":""}
+            Bei Snacks reichen 1 bis 2 Schritte. Schritte so schreiben, dass man direkt danach kochen kann (Temperatur, Zeit, Reihenfolge).
         """.trimIndent()
 
         val result = LlmClient(settings).complete(system, user)
@@ -122,6 +128,7 @@ class PlanGenerator(private val context: Context) {
             val d = runCatching { LocalDate.parse(t.optString("datum")) }.getOrNull()
             val target = targets.firstOrNull { it.day == d }
             vDays.put(JSONObject()
+                .put("date", d?.toString().orEmpty())
                 .put("label", d?.let { it.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.GERMAN) + ", " + it.format(fmt) } ?: t.optString("datum"))
                 .put("kcal", target?.kcal ?: 0).put("protein", target?.proteinG ?: 0).put("note", target?.note.orEmpty())
                 .put("meals", t.optJSONArray("mahlzeiten") ?: JSONArray()))

@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 object Http {
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS) // KI-Antworten können dauern
+        .readTimeout(600, TimeUnit.SECONDS) // KI-Antworten können dauern
         .build()
 }
 

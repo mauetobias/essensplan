@@ -48,7 +48,7 @@
         </activity-alias>
 
         <!-- Öffnet sich beim Tippen auf den Widget-Knopf -->
-        <activity android:name=".ui.PlanActivity" android:exported="true">
+        <activity android:name=".ui.PlanActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -74,6 +74,7 @@
         </provider>
 
         <activity android:name=".ui.VorratActivity" android:exported="false" />
+        <activity android:name=".ui.RecipeActivity" android:exported="false" />
 
         <receiver android:name=".widget.PlanWidgetReceiver" android:exported="true">
             <intent-filter>

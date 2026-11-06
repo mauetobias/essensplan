@@ -54,7 +54,7 @@ class LlmClient(private val settings: Settings) {
     private fun claudeRaw(messages: JSONArray, system: String): String {
         val body = JSONObject()
             .put("model", settings.claudeModel)
-            .put("max_tokens", 8000)
+            .put("max_tokens", 20000)
             .put("system", system)
             .put("messages", messages)
         val req = Request.Builder().url("https://api.anthropic.com/v1/messages")
