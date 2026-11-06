@@ -27,6 +27,9 @@ class BringClient(private val email: String, private val password: String) {
         }
     }
 
+    /** Verbindungstest: Login versuchen. */
+    fun test(): String { login(); return "Verbunden" }
+
     /** items: Paare aus Artikelname und Menge, z.B. "Haferflocken" to "500 g". */
     fun addItems(items: List<Pair<String, String>>): Int {
         val s = login()

@@ -21,7 +21,7 @@ class Settings(context: Context) {
     var claudeKey get() = s("claude_key"); set(v) = put("claude_key", v)
     var claudeModel get() = s("claude_model", "claude-sonnet-5-5"); set(v) = put("claude_model", v)
     var geminiKey get() = s("gemini_key"); set(v) = put("gemini_key", v)
-    var geminiModel get() = s("gemini_model", "gemini-2.5-flash"); set(v) = put("gemini_model", v)
+    var geminiModel get() = s("gemini_model", "gemini-3.8-flash"); set(v) = put("gemini_model", v)
 
     var bringEmail get() = s("bring_email"); set(v) = put("bring_email", v)
     var bringPassword get() = s("bring_pw"); set(v) = put("bring_pw", v)

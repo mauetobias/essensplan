@@ -1,14 +1,13 @@
 package cc.maue.essensplan.data
 
 import android.content.Context
-import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 
 /**
  * Lernt aus REWE-eBons, was du typischerweise kaufst.
- * Jeder Bon wird einmal von der KI gelesen (PDF → Artikelliste), danach bleibt alles lokal.
+ * Jeder Bon wird direkt im Handy gelesen (Text-PDF → Artikelliste), alles bleibt lokal.
  */
 class PurchaseHistory(private val context: Context) {
 
@@ -28,15 +27,13 @@ class PurchaseHistory(private val context: Context) {
         val seen = seen()
         if (hash in seen) return 0
 
-        val prompt = """
-            Das ist ein Kassenbon. Lies alle gekauften Artikel aus und vereinfache die Bon-Kürzel zu normalen Produktnamen
-            (z.B. "JA! H-MILCH 1,5%" → "H-Milch 1,5 %"). Pfand, Tüten und Rabattzeilen weglassen.
-            Antworte nur mit JSON: {"datum":"YYYY-MM-DD","markt":"","artikel":[{"name":"","kategorie":"Obst/Gemüse|Kühlregal|Fleisch/Wurst|Brot/Backwaren|Vorrat|Snacks|Getränke|Drogerie|Tiefkühl|Sonstiges","preis":0.0}]}
-        """.trimIndent()
-        val res = LlmClient(settings).readPdf(Base64.encodeToString(bytes, Base64.NO_WRAP), prompt)
-        val o = JSONObject("{" + res.substringAfter("{").substringBeforeLast("}") + "}")
-        val date = o.optString("datum").ifBlank { LocalDate.now().toString() }
-        val arr = o.optJSONArray("artikel") ?: JSONArray()
+        // Direkt im Handy auslesen, ohne KI
+        val receipt = EbonParser.parse(EbonParser.text(context, bytes))
+        require(receipt.items.isNotEmpty()) { "Keine Artikel erkannt" }
+        val date = receipt.date.ifBlank { LocalDate.now().toString() }
+        val arr = JSONArray().apply {
+            receipt.items.forEach { put(JSONObject().put("name", it.name).put("kategorie", it.category).put("preis", it.price).put("menge", it.qty)) }
+        }
 
         val items = load()
         for (i in 0 until arr.length()) {
@@ -54,7 +51,7 @@ class PurchaseHistory(private val context: Context) {
 
         // Frische Einkäufe der letzten 5 Tage direkt in den Vorrat
         if (LocalDate.parse(date).isAfter(LocalDate.now().minusDays(5))) {
-            Pantry(context).addPurchased((0 until arr.length()).map { Triple(arr.getJSONObject(it).optString("name"), 1.0, "Stück") })
+            Pantry(context).addPurchased(receipt.items.filter { it.category != "Drogerie/Haushalt" }.map { Triple(it.name, it.qty.toDouble(), "Stück") })
         }
         return arr.length()
     }

@@ -7,8 +7,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Erst Claude. Wenn Claude nicht kann (Guthaben leer, Limit erreicht, überlastet, kein Key),
- * automatisch Gemini.
+ * Gemini zuerst (kostenlos mit Google-Konto). Claude nur, wenn ein Schlüssel hinterlegt ist,
+ * als Reserve. Veraltete Gemini-Modelle werden automatisch durch das empfohlene ersetzt.
  */
 class LlmClient(private val settings: Settings) {
 
@@ -17,46 +17,26 @@ class LlmClient(private val settings: Settings) {
     private val json = "application/json".toMediaType()
 
     fun complete(system: String, user: String): Result {
-        var claudeError: Exception? = null
+        var firstError: Exception? = null
+        if (settings.geminiKey.isNotBlank()) {
+            try { return Result(gemini(system, user), "Gemini") } catch (e: Exception) { firstError = e }
+        }
         if (settings.claudeKey.isNotBlank()) {
-            try {
-                return Result(claude(system, user), "Claude")
-            } catch (e: HttpException) {
-                // 400 mit "credit balance", 401/403 Key-Problem, 429 Limit, 5xx/529 überlastet
-                claudeError = e
-            } catch (e: Exception) {
-                claudeError = e
-            }
+            try { return Result(claude(system, user), "Claude") } catch (e: Exception) { if (firstError == null) firstError = e }
         }
-        if (settings.geminiKey.isBlank()) throw claudeError ?: IllegalStateException("Kein API-Key hinterlegt")
-        return Result(gemini(system, user), if (claudeError != null) "Gemini (Claude nicht verfügbar)" else "Gemini")
+        throw firstError ?: IllegalStateException("Kein KI-Schlüssel hinterlegt. Bitte in den Einstellungen bei Gemini eintragen.")
     }
 
-    /** PDF lesen lassen (eBons). Claude zuerst, sonst Gemini. */
-    fun readPdf(base64: String, prompt: String): String {
-        if (settings.claudeKey.isNotBlank()) runCatching {
-            val content = JSONArray()
-                .put(JSONObject().put("type", "document").put("source",
-                    JSONObject().put("type", "base64").put("media_type", "application/pdf").put("data", base64)))
-                .put(JSONObject().put("type", "text").put("text", prompt))
-            return claudeRaw(JSONArray().put(JSONObject().put("role", "user").put("content", content)), "Antworte nur mit JSON.")
-        }
-        val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray()
-            .put(JSONObject().put("inline_data", JSONObject().put("mime_type", "application/pdf").put("data", base64)))
-            .put(JSONObject().put("text", prompt)))))
-            .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
-        return geminiRaw(body)
-    }
+    /** Kurzer Verbindungstest für den Verbinden-Knopf. */
+    fun testGemini(): String { geminiRaw(textBody("Antworte nur mit {\"ok\":true}")); return "Verbunden (${settings.geminiModel})" }
+    fun testClaude(): String { claude("Antworte nur mit OK.", "Test"); return "Verbunden (${settings.claudeModel})" }
 
-    private fun claude(system: String, user: String): String =
-        claudeRaw(JSONArray().put(JSONObject().put("role", "user").put("content", user)), system)
-
-    private fun claudeRaw(messages: JSONArray, system: String): String {
+    private fun claude(system: String, user: String): String {
         val body = JSONObject()
             .put("model", settings.claudeModel)
             .put("max_tokens", 20000)
             .put("system", system)
-            .put("messages", messages)
+            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
         val req = Request.Builder().url("https://api.anthropic.com/v1/messages")
             .header("x-api-key", settings.claudeKey)
             .header("anthropic-version", "2023-06-01")
@@ -70,22 +50,42 @@ class LlmClient(private val settings: Settings) {
         }
     }
 
-    private fun gemini(system: String, user: String): String = geminiRaw(JSONObject()
-        .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
-        .put("contents", JSONArray().put(JSONObject().put("role", "user")
-            .put("parts", JSONArray().put(JSONObject().put("text", user)))))
-        .put("generationConfig", JSONObject().put("responseMimeType", "application/json")))
+    private fun textBody(user: String, system: String? = null) = JSONObject().apply {
+        if (system != null) put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+        put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", user)))))
+        put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
+    }
 
-    private fun geminiRaw(body: JSONObject): String {
+    private fun gemini(system: String, user: String): String = geminiRaw(textBody(user, system))
+
+    private fun geminiRaw(body: JSONObject, retried: Boolean = false): String {
         val url = "https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent"
         val req = Request.Builder().url(url).header("x-goog-api-key", settings.geminiKey)
             .post(body.toString().toRequestBody(json)).build()
         Http.client.newCall(req).execute().use {
             val txt = it.body?.string().orEmpty()
+            if (it.code == 404 && !retried) {
+                // Modell abgeschaltet: empfohlenes Modell aus der Fehlermeldung oder neuestes Flash-Modell nehmen
+                val suggested = Regex("models/(gemini[\\w.\\-]+)").findAll(txt).map { m -> m.groupValues[1] }
+                    .firstOrNull { m -> m != settings.geminiModel } ?: newestFlash()
+                if (suggested != null) { settings.geminiModel = suggested; return geminiRaw(body, retried = true) }
+            }
             if (!it.isSuccessful) throw HttpException(it.code, txt)
             val parts = JSONObject(txt).getJSONArray("candidates").getJSONObject(0)
                 .getJSONObject("content").getJSONArray("parts")
             return (0 until parts.length()).joinToString("") { i -> parts.getJSONObject(i).optString("text") }
         }
     }
+
+    /** Neuestes verfügbares Flash-Modell, das Text erzeugen kann. */
+    private fun newestFlash(): String? = runCatching {
+        val req = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200")
+            .header("x-goog-api-key", settings.geminiKey).build()
+        val arr = Http.client.newCall(req).execute().use { JSONObject(it.body!!.string()).getJSONArray("models") }
+        (0 until arr.length()).map { arr.getJSONObject(it) }
+            .filter { m -> m.optJSONArray("supportedGenerationMethods").toString().contains("generateContent") }
+            .map { it.getString("name").removePrefix("models/") }
+            .filter { it.contains("flash") && !it.contains("lite") && !it.contains("image") && !it.contains("tts") && !it.contains("preview") }
+            .maxByOrNull { n -> Regex("(\\d+(\\.\\d+)?)").find(n)?.value?.toDoubleOrNull() ?: 0.0 }
+    }.getOrNull()
 }

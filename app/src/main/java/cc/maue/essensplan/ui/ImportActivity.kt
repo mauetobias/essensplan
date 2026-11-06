@@ -51,7 +51,7 @@ class ImportActivity : ComponentActivity() {
                             Text("So lernt die App, was du kaufst", style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "Deine REWE-eBons kommen per Mail. Öffne einen in Gmail, tippe beim PDF auf Teilen und wähle Essensplan. " +
-                                    "Oder lade mehrere PDFs herunter und wähle sie hier alle auf einmal aus.",
+                                    "Oder lade mehrere PDFs herunter und wähle sie hier alle auf einmal aus. Gelesen wird direkt im Handy, ohne KI.",
                                 color = Fresh.Soft, modifier = Modifier.padding(top = 6.dp),
                             )
                             Spacer(Modifier.height(12.dp))
@@ -92,18 +92,18 @@ class ImportActivity : ComponentActivity() {
         busy = true
         lifecycleScope.launch {
             val h = PurchaseHistory(this@ImportActivity); val s = Settings(this@ImportActivity)
-            var items = 0; var done = 0; var skipped = 0; var failed = 0
+            var items = 0; var done = 0; var skipped = 0; var failed = 0; var why = ""
             for (u in uris) {
                 status = "Bon ${done + skipped + failed + 1} von ${uris.size} …"
                 withContext(Dispatchers.IO) {
                     runCatching { contentResolver.openInputStream(u)!!.use { it.readBytes() } }
                         .mapCatching { h.importPdf(it, s) }
                         .onSuccess { if (it == 0) skipped++ else { done++; items += it } }
-                        .onFailure { failed++ }
+                        .onFailure { failed++; if (why.isEmpty()) why = it.message.orEmpty().take(80) }
                 }
             }
             status = "$done Bons gelernt, $items Artikel" +
-                (if (skipped > 0) ", $skipped kannte ich schon" else "") + (if (failed > 0) ", $failed nicht lesbar" else "")
+                (if (skipped > 0) ", $skipped kannte ich schon" else "") + (if (failed > 0) ", $failed nicht lesbar ($why)" else "")
             busy = false; refresh++
         }
     }

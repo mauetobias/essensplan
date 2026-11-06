@@ -39,6 +39,9 @@ class YazioClient(private val email: String, private val password: String) {
                 txt
             }
 
+    /** Verbindungstest: Login versuchen. */
+    fun test(): String { token(); return "Verbunden" }
+
     /** Eigene und gespeicherte Rezepte. */
     fun recipes(): List<Recipe> {
         if (email.isBlank()) return emptyList()

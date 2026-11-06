@@ -43,7 +43,13 @@ import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import cc.maue.essensplan.data.HealthRepo
 import cc.maue.essensplan.data.Settings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import cc.maue.essensplan.data.BringClient
+import cc.maue.essensplan.data.LlmClient
+import cc.maue.essensplan.data.YazioClient
 
 /** Einstellungen: Freigaben mit Status, Rhythmus, Märkte, Verbindungen (eingeklappt), Profil. */
 class MainActivity : ComponentActivity() {
@@ -115,24 +121,24 @@ class MainActivity : ComponentActivity() {
 
                         SectionTitle("Verbindungen")
                         FreshCard {
-                            Connection("🤖", "Claude", s.claudeKey.isNotBlank(), "console.anthropic.com/settings/keys") {
+                            Connection("✨", "Gemini", s.geminiKey.isNotBlank(), "aistudio.google.com/apikey", test = { LlmClient(s).testGemini() }) {
+                                Field("API-Key", s.geminiKey, secret = true) { s.geminiKey = it }
+                                Field("Modell (passt sich selbst an)", s.geminiModel) { s.geminiModel = it }
+                            }
+                            Connection("🤖", "Claude (optional, kostenpflichtig)", s.claudeKey.isNotBlank(), "console.anthropic.com/settings/keys", test = { LlmClient(s).testClaude() }) {
                                 Field("API-Key", s.claudeKey, secret = true) { s.claudeKey = it }
                                 Field("Modell", s.claudeModel) { s.claudeModel = it }
                             }
-                            Connection("✨", "Gemini (Reserve)", s.geminiKey.isNotBlank(), "aistudio.google.com/apikey") {
-                                Field("API-Key", s.geminiKey, secret = true) { s.geminiKey = it }
-                                Field("Modell", s.geminiModel) { s.geminiModel = it }
-                            }
-                            Connection("🍏", "YAZIO", s.yazioEmail.isNotBlank() && s.yazioPassword.isNotBlank(), null) {
+                            Connection("🍏", "YAZIO", s.yazioEmail.isNotBlank() && s.yazioPassword.isNotBlank(), null, test = { YazioClient(s.yazioEmail, s.yazioPassword).test() }) {
                                 Field("E-Mail", s.yazioEmail, type = ContentType.EmailAddress) { s.yazioEmail = it }
                                 Field("Passwort", s.yazioPassword, secret = true, type = ContentType.Password) { s.yazioPassword = it }
                             }
-                            Connection("🛒", "Bring!", s.bringEmail.isNotBlank() && s.bringPassword.isNotBlank(), null) {
+                            Connection("🛒", "Bring!", s.bringEmail.isNotBlank() && s.bringPassword.isNotBlank(), null, test = { BringClient(s.bringEmail, s.bringPassword).test() }) {
                                 Field("E-Mail", s.bringEmail, type = ContentType.EmailAddress) { s.bringEmail = it }
                                 Field("Passwort", s.bringPassword, secret = true, type = ContentType.Password) { s.bringPassword = it }
                             }
                             Text(
-                                "Einmal eintragen, dann bleibt es verschlüsselt auf dem Handy. Bei E-Mail und Passwort schlägt der Google Passwortmanager deine gespeicherten Logins vor.",
+                                "Eintragen und auf „Speichern und verbinden“ tippen. Alles bleibt verschlüsselt auf dem Handy. Bei E-Mail und Passwort schlägt der Google Passwortmanager deine Logins vor. Gemini reicht, Claude ist nur Reserve.",
                                 color = Fresh.Soft, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp),
                             )
                         }
@@ -184,8 +190,15 @@ private fun PermissionRow(emoji: String, title: String, sub: String, ok: Boolean
     }
 
 @Composable
-private fun Connection(emoji: String, name: String, connected: Boolean, keyUrl: String?, content: @Composable ColumnScope.() -> Unit) {
+private fun Connection(
+    emoji: String, name: String, connected: Boolean, keyUrl: String?,
+    test: () -> String, content: @Composable ColumnScope.() -> Unit,
+) {
+    var ok by remember { mutableStateOf(connected) }
     var open by remember { mutableStateOf(!connected) }
+    var busy by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
@@ -194,16 +207,47 @@ private fun Connection(emoji: String, name: String, connected: Boolean, keyUrl: 
         ) {
             Text(emoji, fontSize = 20.sp)
             Text(name, Modifier.padding(start = 12.dp).weight(1f), fontWeight = FontWeight.SemiBold)
-            Box(Modifier.size(8.dp).clip(CircleShape).background(if (connected) Fresh.Leaf else Fresh.Citrus))
-            Text(if (connected) " verbunden" else " fehlt", color = if (connected) Fresh.Leaf else Fresh.Citrus, fontSize = 12.sp)
+            Box(Modifier.size(8.dp).clip(CircleShape).background(if (ok) Fresh.Leaf else Fresh.Citrus))
+            Text(if (ok) " verbunden" else " fehlt", color = if (ok) Fresh.Leaf else Fresh.Citrus, fontSize = 12.sp)
             Text(if (open) "  ˄" else "  ˅", color = Fresh.Soft)
         }
         AnimatedVisibility(open) {
             Column(Modifier.padding(top = 4.dp)) {
                 content()
+                Button(
+                    enabled = !busy, shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Fresh.Leaf),
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    onClick = {
+                        busy = true; msg = ""
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { runCatching { test() } }
+                            busy = false
+                            r.onSuccess { ok = true; msg = "✓ Gespeichert. $it"; delay(1200); open = false }
+                             .onFailure { ok = false; msg = "Gespeichert, aber Verbindung klappt nicht: " + friendly(it) }
+                        }
+                    },
+                ) {
+                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    else Text("Speichern und verbinden", fontWeight = FontWeight.SemiBold)
+                }
+                if (msg.isNotBlank()) Text(msg, color = if (ok) Fresh.Leaf else Fresh.Berry, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
                 if (keyUrl != null) TextButton({ uri.openUri("https://$keyUrl") }) { Text("Schlüssel holen: $keyUrl", color = Fresh.Leaf, fontSize = 12.sp) }
             }
         }
+    }
+}
+
+/** Fehlermeldungen in verständliche Sätze übersetzen. */
+private fun friendly(e: Throwable): String {
+    val t = e.message.orEmpty()
+    return when {
+        t.contains("credit balance", true) -> "Kein Guthaben bei Claude. Nimm einfach Gemini."
+        t.startsWith("HTTP 401") || t.startsWith("HTTP 403") || t.contains("API_KEY_INVALID") -> "Schlüssel oder Passwort falsch."
+        t.startsWith("HTTP 400") && t.contains("invalid_grant") -> "E-Mail oder Passwort falsch."
+        t.startsWith("HTTP 429") -> "Gerade zu viele Anfragen, gleich nochmal versuchen."
+        e is java.net.UnknownHostException -> "Kein Internet."
+        else -> t.take(140)
     }
 }
 
