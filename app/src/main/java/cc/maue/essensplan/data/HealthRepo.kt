@@ -47,13 +47,17 @@ class HealthRepo(context: Context) {
         val avgSleepH7d: Double?,
         val restingHr: Long?,
         val recentWorkouts: List<String>,
+        val weightInfo: String = "",
+        val fatInfo: String = "",
+        val daily: List<String> = emptyList(),
+        val sleepNights: Int = 0,
     ) {
         fun asText() = buildString {
             appendLine("Gewicht: ${weightKg?.let { "%.1f kg".format(it) } ?: "unbekannt"}")
             appendLine("Körperfett: ${bodyFatPct?.let { "%.1f %%".format(it) } ?: "unbekannt"}")
-            appendLine("Ø aktive kcal/Tag (14 T): ${avgActiveKcal14d?.toInt() ?: "unbekannt"}")
+            appendLine("Ø aktive kcal/Tag (Tage mit Daten, max. 14): ${avgActiveKcal14d?.toInt() ?: "unbekannt"}")
             appendLine("Ø Schritte/Tag (14 T): ${avgSteps14d?.toInt() ?: "unbekannt"}")
-            appendLine("Ø Schlaf (7 T): ${avgSleepH7d?.let { "%.1f h".format(it) } ?: "unbekannt"}")
+            appendLine("Ø Schlaf pro Nacht: ${avgSleepH7d?.let { "%.1f h".format(it) } ?: "unbekannt"}")
             appendLine("Ruhepuls: ${restingHr ?: "unbekannt"}")
             if (recentWorkouts.isNotEmpty()) appendLine("Letzte Einheiten: ${recentWorkouts.joinToString("; ")}")
         }
@@ -64,29 +68,55 @@ class HealthRepo(context: Context) {
         val now = Instant.now()
         fun range(days: Long) = TimeRangeFilter.between(now.minus(Duration.ofDays(days)), now)
 
-        val weight = latest<WeightRecord>(range(60))?.weight?.inKilograms
-        val fat = latest<BodyFatRecord>(range(60))?.percentage?.value
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("dd.MM. HH:mm").withZone(java.time.ZoneId.systemDefault())
+        fun origin(r: Record) = r.metadata.dataOrigin.packageName.let { p ->
+            when {
+                "garmin" in p -> "Garmin Connect"; "afit" in p || "mybeo" in p -> "AFit Health"; "healthdata" in p -> "Health Connect"
+                else -> p
+            }
+        }
+        val wRec = latest<WeightRecord>(range(60))
+        val fRec = latest<BodyFatRecord>(range(60))
+        val weight = wRec?.weight?.inKilograms
+        val fat = fRec?.percentage?.value
         val height = latest<HeightRecord>(range(3650))?.height?.inMeters?.times(100)
         val rhr = latest<RestingHeartRateRecord>(range(7))?.beatsPerMinute
 
-        val agg = client.aggregate(
-            AggregateRequest(
+        // Tageswerte der letzten 14 Tage; Durchschnitt nur über Tage, an denen wirklich Daten da sind
+        val zone = java.time.ZoneId.systemDefault()
+        val startDay = java.time.LocalDate.now().minusDays(13).atStartOfDay()
+        val perDay = client.aggregateGroupByPeriod(
+            androidx.health.connect.client.request.AggregateGroupByPeriodRequest(
                 setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL, StepsRecord.COUNT_TOTAL),
-                range(14),
+                TimeRangeFilter.between(startDay, java.time.LocalDateTime.now()),
+                java.time.Period.ofDays(1),
             )
         )
-        val activeKcal = agg[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories?.div(14)
-        val steps = agg[StepsRecord.COUNT_TOTAL]?.toDouble()?.div(14)
+        val kcalDays = perDay.mapNotNull { it.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories?.takeIf { v -> v > 0 } }
+        val stepDays = perDay.mapNotNull { it.result[StepsRecord.COUNT_TOTAL]?.takeIf { v -> v > 0 } }
+        val activeKcal = kcalDays.takeIf { it.isNotEmpty() }?.average()
+        val steps = stepDays.takeIf { it.isNotEmpty() }?.average()
+        val daily = perDay.map {
+            "${it.startTime.toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("EE dd.MM.", java.util.Locale.GERMAN))}: " +
+                "${it.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories?.toInt() ?: "–"} aktive kcal, " +
+                "${it.result[StepsRecord.COUNT_TOTAL] ?: "–"} Schritte"
+        }
 
         val sleep = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range(7))).records
+        val nights = sleep.map { it.endTime.atZone(zone).toLocalDate() }.distinct().size
         val sleepH = sleep.takeIf { it.isNotEmpty() }
-            ?.sumOf { Duration.between(it.startTime, it.endTime).toMinutes() }?.div(60.0)?.div(7)
+            ?.sumOf { Duration.between(it.startTime, it.endTime).toMinutes() }?.div(60.0)?.div(nights.coerceAtLeast(1))
 
         val workouts = client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range(7))).records
             .takeLast(6)
-            .map { "${it.title ?: "Training"} (${Duration.between(it.startTime, it.endTime).toMinutes()} min)" }
+            .map { "${fmt.format(it.startTime)} ${it.title ?: "Training"} (${Duration.between(it.startTime, it.endTime).toMinutes()} min, ${origin(it)})" }
 
-        return Snapshot(weight, fat, height, activeKcal, steps, sleepH, rhr, workouts)
+        return Snapshot(
+            weight, fat, height, activeKcal, steps, sleepH, rhr, workouts,
+            weightInfo = wRec?.let { "gemessen ${fmt.format(it.time)}, Quelle ${origin(it)}" } ?: "keine Messung in 60 Tagen",
+            fatInfo = fRec?.let { "gemessen ${fmt.format(it.time)}, Quelle ${origin(it)}" } ?: "keine Messung in 60 Tagen",
+            daily = daily, sleepNights = nights,
+        )
     }
 
     private suspend inline fun <reified T : Record> latest(filter: TimeRangeFilter): T? =

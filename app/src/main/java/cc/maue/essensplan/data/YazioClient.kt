@@ -17,7 +17,7 @@ class YazioClient(private val email: String, private val password: String) {
     private val clientId = "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c"
     private val clientSecret = "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o4"
 
-    data class Recipe(val name: String, val kcal: Int?, val proteinG: Int?, val servings: Int?, val ingredients: List<String>)
+    data class Recipe(val name: String, val kcal: Int?, val proteinG: Int?, val servings: Int?, val ingredients: List<String>, val steps: List<String> = emptyList())
 
     private fun token(): String {
         val body = FormBody.Builder()
@@ -50,7 +50,7 @@ class YazioClient(private val email: String, private val password: String) {
         for (path in listOf("/user/recipes", "/user/favorites/recipes")) {
             runCatching { collectIds(JSONArray(get(path, t)), ids) }
         }
-        return ids.take(60).mapNotNull { id ->
+        return ids.take(200).mapNotNull { id ->
             runCatching { parseRecipe(JSONObject(get("/recipes/$id", t))) }.getOrNull()
         }
     }
@@ -62,6 +62,21 @@ class YazioClient(private val email: String, private val password: String) {
                 is JSONObject -> (v.optString("recipe_id").ifBlank { v.optString("id") }).takeIf { it.isNotBlank() }?.let { into += it }
             }
         }
+    }
+
+    /** Zubereitung: YAZIO liefert sie je nach Version unter verschiedenen Namen. */
+    private fun steps(o: JSONObject): List<String> {
+        for (k in listOf("instructions", "steps", "preparation", "preparation_steps", "directions")) {
+            val a = o.optJSONArray(k) ?: continue
+            return (0 until a.length()).mapNotNull { i ->
+                when (val v = a.get(i)) {
+                    is String -> v
+                    is JSONObject -> v.optString("text").ifBlank { v.optString("description") }.ifBlank { v.optString("instruction") }
+                    else -> null
+                }?.takeIf { it.isNotBlank() }
+            }
+        }
+        return o.optString("instructions").takeIf { it.isNotBlank() && it != "null" }?.split("\n")?.filter { it.isNotBlank() }.orEmpty()
     }
 
     private fun parseRecipe(o: JSONObject): Recipe {
@@ -82,6 +97,7 @@ class YazioClient(private val email: String, private val password: String) {
             proteinG = nutr?.optDouble("nutrient.protein")?.takeIf { !it.isNaN() }?.div(servings)?.toInt(),
             servings = servings,
             ingredients = list,
+            steps = steps(o),
         )
     }
 }

@@ -92,10 +92,10 @@ class PlanActivity : ComponentActivity() {
                     containerColor = Fresh.Bg,
                     bottomBar = {
                         NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                            listOf("🗓️" to "Plan", "🛒" to "Einkauf", "🥫" to "Vorrat").forEachIndexed { i, (ic, label) ->
+                            listOf("🗓️" to "Plan", "🛒" to "Einkauf", "📊" to "Daten", "🥫" to "Vorrat").forEachIndexed { i, (ic, label) ->
                                 NavigationBarItem(
                                     selected = tab == i,
-                                    onClick = { if (i == 2) startActivity(Intent(this@PlanActivity, VorratActivity::class.java)) else tab = i },
+                                    onClick = { if (i == 3) startActivity(Intent(this@PlanActivity, VorratActivity::class.java)) else tab = i },
                                     icon = { Text(ic, fontSize = 22.sp) }, label = { Text(label) },
                                     colors = NavigationBarItemDefaults.colors(indicatorColor = Fresh.Mint, selectedTextColor = Fresh.Forest),
                                 )
@@ -119,6 +119,7 @@ class PlanActivity : ComponentActivity() {
                         }
                         when (tab) {
                             0 -> DayCalendar(plan) { meal, label -> RecipeActivity.open(this@PlanActivity, meal, label) }
+                            2 -> DataTab()
                             else -> ShoppingTab(plan,
                                 onDone = { PlanGenerator(this@PlanActivity).markShoppingDone(); status = "Einkauf ist im Vorrat gebucht ✓" },
                                 onImport = { startActivity(Intent(this@PlanActivity, ImportActivity::class.java)) })

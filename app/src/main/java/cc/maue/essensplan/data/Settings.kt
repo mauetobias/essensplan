@@ -48,5 +48,6 @@ class Settings(context: Context) {
     var lastShopping get() = s("last_shopping", "[]"); set(v) = put("last_shopping", v)
 
     var lastPlan get() = s("last_plan"); set(v) = put("last_plan", v)
+    var lastInputs get() = s("last_inputs"); set(v) = put("last_inputs", v)
     var lastPlanTitle get() = s("last_plan_title"); set(v) = put("last_plan_title", v)
 }

@@ -33,8 +33,13 @@ class PlanGenerator(private val context: Context) {
         val targets = Energy.targets(days, events, health, settings)
 
         progress("Lade Rezepte aus YAZIO …")
-        val recipes = runCatching { YazioClient(settings.yazioEmail, settings.yazioPassword).recipes() }
-            .onFailure { warnings += "YAZIO: ${it.message}" }.getOrElse { emptyList() }
+        // Frisch aus YAZIO laden und ins lokale Rezeptbuch übernehmen; geplant wird immer mit dem Rezeptbuch
+        val book = RecipeBook(context)
+        val yazioStatus = runCatching { YazioClient(settings.yazioEmail, settings.yazioPassword).recipes() }.fold(
+            { "${it.size} Rezepte aus YAZIO geladen, ${book.merge(it)} neu im Rezeptbuch" },
+            { e -> "YAZIO nicht erreichbar (${e.message?.take(60)}), lokales Rezeptbuch genutzt".also { m -> warnings += m } },
+        )
+        val recipes = book.all()
 
         progress("Erstelle Plan …")
         val fmt = DateTimeFormatter.ofPattern("dd.MM.")
@@ -142,6 +147,7 @@ class PlanGenerator(private val context: Context) {
         val text = view.toString()
         settings.lastPlan = text
         settings.lastPlanTitle = "${from.format(fmt)} bis ${to.format(fmt)}"
+        settings.lastInputs = Inputs.build(context, health, events, targets, settings, yazioStatus, result.provider + " " + settings.geminiModel).toString()
         return Output(text, added, result.provider, warnings)
     }
 

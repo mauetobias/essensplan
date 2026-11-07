@@ -9,7 +9,10 @@ import java.time.LocalDate
  */
 object Energy {
 
-    data class DayTarget(val day: LocalDate, val kcal: Int, val proteinG: Int, val note: String)
+    data class DayTarget(
+        val day: LocalDate, val kcal: Int, val proteinG: Int, val note: String,
+        val bmr: Int = 0, val everyday: Int = 0, val sport: Int = 0, val extra: Int = 0, val how: String = "",
+    )
 
     fun bmr(weightKg: Double, bodyFatPct: Double?, heightCm: Double, age: Int, male: Boolean): Double =
         if (bodyFatPct != null) 370 + 21.6 * weightKg * (1 - bodyFatPct / 100)
@@ -53,7 +56,18 @@ object Energy {
                 val other = today.filter { !it.isSport }.map { it.title }
                 if (other.isNotEmpty()) { if (isNotEmpty()) append(" | "); append("Termine: " + other.joinToString()) }
             }
-            DayTarget(d, kcal.toInt(), protein, note)
+            val formula = if (health.bodyFatPct != null)
+                "Grundumsatz nach Katch-McArdle: 370 + 21,6 × Magermasse %.1f kg".format(leanMass)
+            else "Grundumsatz nach Mifflin-St Jeor (kein Körperfett): Gewicht %.1f kg, Größe %.0f cm, Alter $age".format(weight, height)
+            val how = buildString {
+                append(formula)
+                append("\nAlltag: " + (if (health.avgActiveKcal14d != null) "60 %% vom Garmin-Schnitt %d kcal (max. halber Grundumsatz)".format(health.avgActiveKcal14d.toInt()) else "geschätzt, keine Garmin-Daten"))
+                if (sport.isNotEmpty()) append("\nSport: " + sport.joinToString { "${it.title} ${it.minutes} min × %.1f kcal/min".format(kcalPerMin(it.title)) })
+                if (busyAllDay) append("\n+150 kcal für ganztägigen Termin")
+                append("\nProtein: Magermasse × " + (if (sport.isNotEmpty()) "2,4" else "2,0") + " g")
+                if (health.weightKg == null) append("\nAchtung: kein Gewicht gefunden, 80 kg angenommen")
+            }
+            DayTarget(d, kcal.toInt(), protein, note, base.toInt(), everyday.toInt(), sportKcal.toInt(), if (busyAllDay) 150 else 0, how)
         }
     }
 }
