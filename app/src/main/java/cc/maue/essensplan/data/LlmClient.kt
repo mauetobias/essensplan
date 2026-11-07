@@ -27,6 +27,22 @@ class LlmClient(private val settings: Settings) {
         throw firstError ?: IllegalStateException("Kein KI-Schlüssel hinterlegt. Bitte in den Einstellungen bei Gemini eintragen.")
     }
 
+    /** Rezept aus Screenshot, Foto oder kopiertem Text erkennen (für das Rezeptbuch). */
+    fun extractRecipe(text: String?, imageBase64: String?, mime: String = "image/jpeg"): JSONObject {
+        val parts = JSONArray()
+        if (imageBase64 != null) parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", mime).put("data", imageBase64)))
+        parts.put(JSONObject().put("text", """
+            Lies das Rezept aus ${if (imageBase64 != null) "dem Bild" else "diesem Text"} und antworte nur mit JSON:
+            {"name":"","portionen":1,"kcal_pro_portion":0,"protein_pro_portion":0,"zutaten":["200 g Hähnchenbrust", "…"],"schritte":["…"]}
+            Fehlen Nährwerte, schätze sie realistisch. Deutsch, keine Gedankenstriche.
+            ${text.orEmpty()}
+        """.trimIndent()))
+        val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
+            .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
+        val res = geminiRaw(body)
+        return JSONObject("{" + res.substringAfter("{").substringBeforeLast("}") + "}")
+    }
+
     /** Kurzer Verbindungstest für den Verbinden-Knopf. */
     fun testGemini(): String { geminiRaw(textBody("Antworte nur mit {\"ok\":true}")); return "Verbunden (${settings.geminiModel})" }
     fun testClaude(): String { claude("Antworte nur mit OK.", "Test"); return "Verbunden (${settings.claudeModel})" }

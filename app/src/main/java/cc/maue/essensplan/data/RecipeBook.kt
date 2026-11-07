@@ -31,6 +31,22 @@ class RecipeBook(context: Context) {
         return added
     }
 
+    /** Von der KI erkanntes Rezept speichern. */
+    fun addFromJson(o: JSONObject): String {
+        fun list(a: JSONArray?) = a?.let { (0 until it.length()).map { i -> it.optString(i) } }.orEmpty().filter { it.isNotBlank() }
+        val r = YazioClient.Recipe(
+            name = o.optString("name").ifBlank { "Rezept" },
+            kcal = o.optInt("kcal_pro_portion").takeIf { it > 0 }, proteinG = o.optInt("protein_pro_portion").takeIf { it > 0 },
+            servings = o.optInt("portionen", 1), ingredients = list(o.optJSONArray("zutaten")), steps = list(o.optJSONArray("schritte")),
+        )
+        merge(listOf(r)); return r.name
+    }
+
+    fun remove(name: String) {
+        val o = JSONObject(prefs.getString("recipes", "{}")!!); o.remove(name.trim().lowercase())
+        prefs.edit().putString("recipes", o.toString()).apply()
+    }
+
     fun lastSync(): Long = prefs.getLong("synced", 0)
 
     /** Rezept im selben Format wie eine Plan-Mahlzeit, damit die Rezeptansicht es anzeigen kann. */

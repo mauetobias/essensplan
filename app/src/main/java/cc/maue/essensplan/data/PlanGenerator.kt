@@ -25,7 +25,8 @@ class PlanGenerator(private val context: Context) {
         val health = runCatching { HealthRepo(context).snapshot() }
             .onFailure { warnings += "Health Connect: ${it.message}" }
             .getOrElse { HealthRepo.Snapshot(null, null, null, null, null, null, null, emptyList()) }
-        if (health.weightKg == null) warnings += "Kein Gewicht in Health Connect gefunden, nutze Schätzwert."
+            .let { settings.withManualBody(it) }
+        if (health.weightKg == null) warnings += "Kein Gewicht gefunden, nutze Schätzwert. Trag es im Daten-Tab ein."
 
         progress("Lese Kalender …")
         val events = runCatching { CalendarRepo(context).events(from, to, settings.sportKeywords.split(",")) }
@@ -35,10 +36,7 @@ class PlanGenerator(private val context: Context) {
         progress("Lade Rezepte aus YAZIO …")
         // Frisch aus YAZIO laden und ins lokale Rezeptbuch übernehmen; geplant wird immer mit dem Rezeptbuch
         val book = RecipeBook(context)
-        val yazioStatus = runCatching { YazioClient(settings.yazioEmail, settings.yazioPassword).recipes() }.fold(
-            { "${it.size} Rezepte aus YAZIO geladen, ${book.merge(it)} neu im Rezeptbuch" },
-            { e -> "YAZIO nicht erreichbar (${e.message?.take(60)}), lokales Rezeptbuch genutzt".also { m -> warnings += m } },
-        )
+        val yazioStatus = "${book.all().size} Rezepte im lokalen Rezeptbuch"
         val recipes = book.all()
 
         progress("Erstelle Plan …")
@@ -54,7 +52,8 @@ class PlanGenerator(private val context: Context) {
 
         val system = "Du bist ein Ernährungsplaner. Antworte ausschließlich mit gültigem JSON, ohne Markdown-Codeblock. Deutsch, keine Gedankenstriche."
         val user = """
-            Erstelle einen Essensplan für ${days.size} Tag(e).
+            Erstelle den Essensplan für GENAU EINEN Tag: __TAG__.
+            Bereits geplant (Reste nutzen, nicht wiederholen): __BISHER__
 
             Körperdaten:
             ${health.asText()}
@@ -67,13 +66,13 @@ class PlanGenerator(private val context: Context) {
             Typische Einkäufe laut REWE-Kassenbons (Vorlieben, gern berücksichtigen):
             ${PurchaseHistory(context).summary()}
 
-            Tagesziele (fest berechnet, ±10 % einhalten):
-            $dayLines
+            Tagesziel (fest berechnet, ±10 % einhalten):
+            __ZIEL__
 
             Zu Hause vorhanden:
             ${pantry.describe()}
 
-            Rezepte aus YAZIO (bevorzugt verwenden):
+            Rezepte aus dem Rezeptbuch (bevorzugt verwenden):
             $recipeText
 
             Regeln:
@@ -94,9 +93,29 @@ class PlanGenerator(private val context: Context) {
             Bei Snacks reichen 1 bis 2 Schritte. Schritte so schreiben, dass man direkt danach kochen kann (Temperatur, Zeit, Reihenfolge).
         """.trimIndent()
 
-        val result = LlmClient(settings).complete(system, user)
-        val plan = JSONObject("{" + result.text.substringAfter("{").substringBeforeLast("}") + "}")
-        val tage = plan.optJSONArray("tage") ?: JSONArray()
+        // Jeder Tag ein eigener, kleiner KI-Aufruf: schneller, robuster und mit Fortschritt
+        val tage = JSONArray()
+        val hints = mutableListOf<String>()
+        var lastProvider = ""
+        val llm = LlmClient(settings)
+        val dayLineList = dayLines.lines()
+        for ((i, d) in days.withIndex()) {
+            progress("Plane Tag ${i + 1} von ${days.size} …")
+            val bisher = (0 until tage.length()).joinToString("; ") { k ->
+                val t = tage.getJSONObject(k); val m = t.optJSONArray("mahlzeiten") ?: JSONArray()
+                t.optString("datum") + ": " + (0 until m.length()).joinToString(", ") { j -> m.getJSONObject(j).optString("rezept") }
+            }.ifBlank { "noch nichts" }
+            val prompt = user.replace("__TAG__", d.toString()).replace("__BISHER__", bisher)
+                .replace("__ZIEL__", dayLineList.getOrElse(i) { "" })
+            val res = llm.complete(system, prompt)
+            lastProvider = res.provider
+            val one = JSONObject("{" + res.text.substringAfter("{").substringBeforeLast("}") + "}")
+            val arr = one.optJSONArray("tage") ?: JSONArray()
+            for (k in 0 until arr.length()) tage.put(arr.getJSONObject(k).put("datum", d.toString()))
+            one.optString("hinweise").takeIf { it.isNotBlank() }?.let { hints += it }
+        }
+        val result = LlmClient.Result("", lastProvider)
+        val plan = JSONObject().put("tage", tage).put("hinweise", hints.joinToString(" "))
 
         // Verbrauch merken und Gesamtbedarf bilden
         val usage = mutableListOf<Pantry.Usage>()

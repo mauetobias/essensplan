@@ -2,6 +2,8 @@ package cc.maue.essensplan.ui
 
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -64,7 +66,10 @@ fun DataTab() {
 
         val d = data
         if (d != null) {
-            Block("⚖️  Körper (Waage)", Fresh.Leaf) { Rows(d.optJSONArray("body")) }
+            Block("⚖️  Körper (Waage)", Fresh.Leaf) {
+                Rows(d.optJSONArray("body"))
+                ManualBody(settings) { reload() }
+            }
             Block("⌚  Aktivität und Schlaf (Garmin)", Fresh.Citrus) {
                 Rows(d.optJSONArray("activity"))
                 Expandable("Tag für Tag", d.optJSONArray("daily"))
@@ -115,20 +120,54 @@ fun DataTab() {
         // Rezeptbuch
         Block("📖  Dein Rezeptbuch (${book.size})", Fresh.Citrus) {
             Text(
-                "Alle Rezepte aus YAZIO werden hier dauerhaft gespeichert, mit Zutaten und Zubereitung. Auch ohne YAZIO-Abo bleiben sie.",
+                "Deine Lieblingsrezepte, dauerhaft auf dem Handy. So kommen sie rein: In YAZIO das Rezept öffnen, Screenshots von Zutaten und Zubereitung machen und hier auswählen. Oder den Rezepttext einfügen. Der Plan nutzt diese Rezepte bevorzugt.",
                 color = Fresh.Soft, fontSize = 12.sp,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(shape = RoundedCornerShape(14.dp), onClick = {
-                bookMsg = "Lade aus YAZIO …"
+            val imgPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+                if (uris.isEmpty()) return@rememberLauncherForActivityResult
                 scope.launch {
-                    bookMsg = withContext(Dispatchers.IO) {
-                        runCatching { YazioClient(settings.yazioEmail, settings.yazioPassword).recipes() }
-                            .fold({ "${it.size} geladen, ${RecipeBook(ctx).merge(it)} neu gespeichert" }, { "YAZIO nicht erreichbar: ${it.message?.take(80)}" })
+                    var n = 0
+                    for ((i, u) in uris.withIndex()) {
+                        bookMsg = "Lese Rezept ${i + 1} von ${uris.size} …"
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                val bytes = ctx.contentResolver.openInputStream(u)!!.use { it.readBytes() }
+                                val mime = ctx.contentResolver.getType(u) ?: "image/jpeg"
+                                RecipeBook(ctx).addFromJson(LlmClient(settings).extractRecipe(null, android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP), mime))
+                            }.onSuccess { n++ }
+                        }
                     }
+                    bookMsg = "$n von ${uris.size} Rezepten gespeichert"
                     book = RecipeBook(ctx).all()
                 }
-            }) { Text("Jetzt mit YAZIO abgleichen") }
+            }
+            var pasteOpen by remember { mutableStateOf(false) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(shape = RoundedCornerShape(14.dp), onClick = { imgPicker.launch("image/*") }) { Text("📷 Screenshots") }
+                OutlinedButton(shape = RoundedCornerShape(14.dp), onClick = { pasteOpen = true }) { Text("📋 Text einfügen") }
+            }
+            if (pasteOpen) {
+                var txt by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { pasteOpen = false },
+                    title = { Text("Rezept einfügen") },
+                    text = { OutlinedTextField(txt, { txt = it }, minLines = 6, placeholder = { Text("Rezepttext hier einfügen") }) },
+                    confirmButton = {
+                        TextButton({
+                            pasteOpen = false; bookMsg = "Lese Rezept …"
+                            scope.launch {
+                                bookMsg = withContext(Dispatchers.IO) {
+                                    runCatching { RecipeBook(ctx).addFromJson(LlmClient(settings).extractRecipe(txt, null)) }
+                                        .fold({ "„$it“ gespeichert" }, { "Konnte das Rezept nicht lesen: ${it.message?.take(80)}" })
+                                }
+                                book = RecipeBook(ctx).all()
+                            }
+                        }) { Text("Speichern") }
+                    },
+                    dismissButton = { TextButton({ pasteOpen = false }) { Text("Abbrechen") } },
+                )
+            }
             if (bookMsg.isNotBlank()) Hint(bookMsg)
             book.forEach { r ->
                 Row(
@@ -155,7 +194,7 @@ fun DataTab() {
 /** Live: Health Connect und Kalender jetzt lesen, Ziele für heute bis in 6 Tagen rechnen. */
 private suspend fun liveInputs(ctx: Context): JSONObject {
     val s = Settings(ctx)
-    val health = runCatching { HealthRepo(ctx).snapshot() }.getOrElse { HealthRepo.Snapshot(null, null, null, null, null, null, null, emptyList()) }
+    val health = s.withManualBody(runCatching { HealthRepo(ctx).snapshot() }.getOrElse { HealthRepo.Snapshot(null, null, null, null, null, null, null, emptyList()) })
     val from = LocalDate.now(); val to = from.plusDays(6)
     val events = runCatching { CalendarRepo(ctx).events(from, to, s.sportKeywords.split(",")) }.getOrElse { emptyList() }
     val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
@@ -197,3 +236,31 @@ private fun Expandable(title: String, a: JSONArray?) {
 
 @Composable
 private fun Hint(t: String) = Text(t, color = Fresh.Soft, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+
+/** Gewicht und Körperfett von Hand eintragen, falls die Waage nicht an Health Connect liefert. */
+@Composable
+private fun ManualBody(settings: Settings, onSaved: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    var w by remember { mutableStateOf(settings.manualWeight) }
+    var f by remember { mutableStateOf(settings.manualFat) }
+    Text((if (open) "˄ " else "˅ ") + "Von der Waage ablesen und eintragen", color = Fresh.Leaf, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 10.dp).clickable { open = !open })
+    if (open) {
+        Hint("AFit Health gibt die Werte nicht an Health Connect weiter. Trag sie nach dem Wiegen hier ein, die App nutzt sie, bis echte Waagen-Daten kommen.")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+            OutlinedTextField(w, { w = it }, label = { Text("Gewicht kg") }, singleLine = true, modifier = Modifier.weight(1f),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+            OutlinedTextField(f, { f = it }, label = { Text("Körperfett %") }, singleLine = true, modifier = Modifier.weight(1f),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+        }
+        Button(
+            onClick = {
+                settings.manualWeight = w.trim(); settings.manualFat = f.trim()
+                settings.manualDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+                open = false; onSaved()
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Fresh.Leaf), shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
+        ) { Text("Speichern") }
+    }
+}

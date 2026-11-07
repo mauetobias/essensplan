@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.lifecycleScope
+import cc.maue.essensplan.data.BringClient
 import cc.maue.essensplan.data.PlanGenerator
 import cc.maue.essensplan.data.Settings
 import cc.maue.essensplan.data.Updater
@@ -68,11 +69,17 @@ class PlanActivity : ComponentActivity() {
                     busy = true; openNewPlan = false
                     lifecycleScope.launch {
                         try {
-                            withContext(Dispatchers.IO) {
+                            val out = withContext(Dispatchers.IO) {
                                 PlanGenerator(this@PlanActivity).run(from, to, bring) { s -> lifecycleScope.launch { status = s } }
                             }
                             plan = runCatching { JSONObject(settings.lastPlan) }.getOrNull()
-                            status = ""; tab = 0
+                            val bringErr = out.warnings.firstOrNull { it.startsWith("Bring") }
+                            status = when {
+                                !bring -> "Plan fertig ✓"
+                                bringErr != null -> "Plan fertig, aber Bring hat nicht geklappt: " + bringErr.removePrefix("Bring: ").take(120)
+                                else -> "Plan fertig ✓  ${out.bringAdded} Artikel in Bring"
+                            }
+                            tab = 0
                             PlanWidget().updateAll(this@PlanActivity)
                         } catch (e: Exception) {
                             status = when {
@@ -122,7 +129,20 @@ class PlanActivity : ComponentActivity() {
                             2 -> DataTab()
                             else -> ShoppingTab(plan,
                                 onDone = { PlanGenerator(this@PlanActivity).markShoppingDone(); status = "Einkauf ist im Vorrat gebucht ✓" },
-                                onImport = { startActivity(Intent(this@PlanActivity, ImportActivity::class.java)) })
+                                onImport = { startActivity(Intent(this@PlanActivity, ImportActivity::class.java)) },
+                                onBring = {
+                                    val list = plan?.optJSONArray("shopping")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> o.optString("n") to o.optString("s") } } }.orEmpty()
+                                    if (list.isEmpty()) { status = "Liste ist leer, nichts zu senden"; return@ShoppingTab }
+                                    busy = true; status = "Sende ${list.size} Artikel an Bring …"
+                                    lifecycleScope.launch {
+                                        status = withContext(Dispatchers.IO) {
+                                            runCatching { BringClient(settings.bringEmail, settings.bringPassword).addItems(list) }
+                                                .fold({ n -> if (n == list.size) "✓ Alle $n Artikel sind in Bring" else "$n von ${list.size} Artikeln in Bring angekommen" },
+                                                    { e -> "Bring hat nicht geklappt: " + (e.message ?: "").take(150) })
+                                        }
+                                        busy = false
+                                    }
+                                })
                         }
                     }
                 }
@@ -298,7 +318,7 @@ private fun EmptyState() =
 // ---------------- Einkauf ----------------
 
 @Composable
-private fun ShoppingTab(plan: JSONObject?, onDone: () -> Unit, onImport: () -> Unit) {
+private fun ShoppingTab(plan: JSONObject?, onDone: () -> Unit, onImport: () -> Unit, onBring: () -> Unit) {
     val shop = plan?.optJSONArray("shopping")
     val checked = remember(plan) { mutableStateListOf<Int>() }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -321,6 +341,8 @@ private fun ShoppingTab(plan: JSONObject?, onDone: () -> Unit, onImport: () -> U
                 }
             }
             Spacer(Modifier.height(14.dp))
+            GradientButton("🛒  An Bring senden", brush = Fresh.Sunrise, onClick = onBring)
+            Spacer(Modifier.height(10.dp))
             GradientButton("✅  Einkauf erledigt, in den Vorrat", onClick = onDone)
         }
         if (plan?.optString("rec").orEmpty().isNotBlank()) FreshCard(accent = Fresh.Lime) {

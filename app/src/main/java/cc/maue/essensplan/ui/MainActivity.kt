@@ -129,10 +129,6 @@ class MainActivity : ComponentActivity() {
                                 Field("API-Key", s.claudeKey, secret = true) { s.claudeKey = it }
                                 Field("Modell", s.claudeModel) { s.claudeModel = it }
                             }
-                            Connection("🍏", "YAZIO", s.yazioEmail.isNotBlank() && s.yazioPassword.isNotBlank(), null, test = { YazioClient(s.yazioEmail, s.yazioPassword).test() }) {
-                                Field("E-Mail", s.yazioEmail, type = ContentType.EmailAddress) { s.yazioEmail = it }
-                                Field("Passwort", s.yazioPassword, secret = true, type = ContentType.Password) { s.yazioPassword = it }
-                            }
                             Connection("🛒", "Bring!", s.bringEmail.isNotBlank() && s.bringPassword.isNotBlank(), null, test = { BringClient(s.bringEmail, s.bringPassword).test() }) {
                                 Field("E-Mail", s.bringEmail, type = ContentType.EmailAddress) { s.bringEmail = it }
                                 Field("Passwort", s.bringPassword, secret = true, type = ContentType.Password) { s.bringPassword = it }

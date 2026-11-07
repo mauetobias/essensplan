@@ -19,7 +19,9 @@ class BringClient(private val email: String, private val password: String) {
 
     private fun login(): Session {
         val body = FormBody.Builder().add("email", email).add("password", password).build()
-        Http.client.newCall(Request.Builder().url("$base/bringauth").post(body).build()).execute().use {
+        val req = Request.Builder().url("$base/bringauth").post(body)
+            .header("X-BRING-API-KEY", apiKey).header("X-BRING-CLIENT", "android").header("X-BRING-COUNTRY", "DE").build()
+        Http.client.newCall(req).execute().use {
             val txt = it.body?.string().orEmpty()
             if (!it.isSuccessful) throw HttpException(it.code, txt)
             val o = JSONObject(txt)
@@ -34,6 +36,7 @@ class BringClient(private val email: String, private val password: String) {
     fun addItems(items: List<Pair<String, String>>): Int {
         val s = login()
         var ok = 0
+        var lastErr: HttpException? = null
         for ((name, spec) in items) {
             val form = "uuid=${s.listUuid}&purchase=${enc(name)}&specification=${enc(spec)}"
             val req = Request.Builder()
@@ -45,8 +48,12 @@ class BringClient(private val email: String, private val password: String) {
                 .header("X-BRING-USER-UUID", s.userUuid)
                 .header("X-BRING-COUNTRY", "DE")
                 .build()
-            Http.client.newCall(req).execute().use { if (it.isSuccessful) ok++ }
+            Http.client.newCall(req).execute().use {
+                if (it.isSuccessful) ok++ else lastErr = HttpException(it.code, it.body?.string().orEmpty())
+            }
         }
+        // Ging gar nichts durch, den Grund zeigen statt still 0 zu melden
+        if (ok == 0 && items.isNotEmpty()) throw lastErr ?: IllegalStateException("Bring hat nichts angenommen")
         return ok
     }
 

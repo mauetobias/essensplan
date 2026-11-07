@@ -48,6 +48,23 @@ class Settings(context: Context) {
     var lastShopping get() = s("last_shopping", "[]"); set(v) = put("last_shopping", v)
 
     var lastPlan get() = s("last_plan"); set(v) = put("last_plan", v)
+    // Manuell eingetragene Körperwerte (falls die Waage nicht an Health Connect liefert)
+    var manualWeight get() = s("man_weight"); set(v) = put("man_weight", v)
+    var manualFat get() = s("man_fat"); set(v) = put("man_fat", v)
+    var manualDate get() = s("man_date"); set(v) = put("man_date", v)
+
+    /** Fehlende Waagen-Werte mit den manuell eingetragenen auffüllen. */
+    fun withManualBody(h: HealthRepo.Snapshot): HealthRepo.Snapshot {
+        val w = manualWeight.replace(",", ".").toDoubleOrNull()
+        val f = manualFat.replace(",", ".").toDoubleOrNull()
+        return h.copy(
+            weightKg = h.weightKg ?: w,
+            bodyFatPct = h.bodyFatPct ?: f,
+            weightInfo = if (h.weightKg == null && w != null) "von Hand eingetragen am $manualDate" else h.weightInfo,
+            fatInfo = if (h.bodyFatPct == null && f != null) "von Hand eingetragen am $manualDate" else h.fatInfo,
+        )
+    }
+
     var lastInputs get() = s("last_inputs"); set(v) = put("last_inputs", v)
     var lastPlanTitle get() = s("last_plan_title"); set(v) = put("last_plan_title", v)
 }
