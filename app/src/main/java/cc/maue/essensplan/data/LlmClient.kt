@@ -43,6 +43,23 @@ class LlmClient(private val settings: Settings) {
         return JSONObject("{" + res.substringAfter("{").substringBeforeLast("}") + "}")
     }
 
+    /** Mehrere Screenshots eines Rezepts zusammen lesen. Liefert null, wenn kein Rezept zu sehen ist. */
+    fun extractRecipeFromImages(images: List<Pair<String, String>>): JSONObject? {
+        val parts = JSONArray()
+        images.forEach { (b64, mime) -> parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", mime).put("data", b64))) }
+        parts.put(JSONObject().put("text", """
+            Diese Screenshots stammen vermutlich aus der App YAZIO und zeigen zusammen EIN Rezept (Zutaten, Nährwerte, Zubereitung).
+            Ist auf keinem Bild ein Rezept zu sehen, antworte nur mit {"kein_rezept":true}.
+            Sonst antworte nur mit JSON:
+            {"name":"","portionen":1,"kcal_pro_portion":0,"protein_pro_portion":0,"zutaten":["200 g Hähnchenbrust", "…"],"schritte":["…"]}
+            Fehlen Nährwerte oder Schritte, ergänze sie realistisch. Deutsch, keine Gedankenstriche.
+        """.trimIndent()))
+        val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
+            .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
+        val o = JSONObject("{" + geminiRaw(body).substringAfter("{").substringBeforeLast("}") + "}")
+        return o.takeIf { !it.optBoolean("kein_rezept") && it.optString("name").isNotBlank() }
+    }
+
     /** Kurzer Verbindungstest für den Verbinden-Knopf. */
     fun testGemini(): String { geminiRaw(textBody("Antworte nur mit {\"ok\":true}")); return "Verbunden (${settings.geminiModel})" }
     fun testClaude(): String { claude("Antworte nur mit OK.", "Test"); return "Verbunden (${settings.claudeModel})" }

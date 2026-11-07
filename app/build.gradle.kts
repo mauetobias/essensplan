@@ -60,5 +60,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // REWE-eBons (Text-PDF) direkt im Handy lesen
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // Texterkennung im Handy, um YAZIO-Screenshots zu finden
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }

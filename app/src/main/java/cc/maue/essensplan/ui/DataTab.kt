@@ -142,9 +142,23 @@ fun DataTab() {
                     book = RecipeBook(ctx).all()
                 }
             }
+            val scanPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+                if (!ok) { bookMsg = "Ohne Zugriff auf Fotos kann ich die Screenshots nicht durchsuchen."; return@rememberLauncherForActivityResult }
+                scope.launch {
+                    bookMsg = "Suche YAZIO-Screenshots …"
+                    bookMsg = withContext(Dispatchers.IO) {
+                        runCatching { ScreenshotScanner(ctx).run { p -> scope.launch { bookMsg = p } } }.getOrElse { "Suche abgebrochen: ${it.message?.take(100)}" }
+                    }
+                    book = RecipeBook(ctx).all()
+                }
+            }
+            GradientButton("🔎  Screenshots automatisch durchsuchen") {
+                scanPerm.launch(if (android.os.Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_IMAGES else android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            Spacer(Modifier.height(8.dp))
             var pasteOpen by remember { mutableStateOf(false) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(shape = RoundedCornerShape(14.dp), onClick = { imgPicker.launch("image/*") }) { Text("📷 Screenshots") }
+                OutlinedButton(shape = RoundedCornerShape(14.dp), onClick = { imgPicker.launch("image/*") }) { Text("📷 Bilder wählen") }
                 OutlinedButton(shape = RoundedCornerShape(14.dp), onClick = { pasteOpen = true }) { Text("📋 Text einfügen") }
             }
             if (pasteOpen) {
