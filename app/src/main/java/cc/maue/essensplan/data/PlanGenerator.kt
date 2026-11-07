@@ -47,7 +47,7 @@ class PlanGenerator(private val context: Context) {
         }
         val recipeText = if (recipes.isEmpty()) "Keine Rezepte verfügbar, schlage einfache eigene Gerichte vor." else
             recipes.joinToString("\n") { r ->
-                "- ${r.name}: ${r.kcal ?: "?"} kcal, ${r.proteinG ?: "?"} g Protein pro Portion; Zutaten (${r.servings} Portionen): ${r.ingredients.joinToString(", ")}"
+                "- ${r.name}: ${r.kcal ?: "?"} kcal, ${r.proteinG ?: "?"} g Protein pro Portion, ${r.minutes ?: "?"} min; Zutaten für ${r.servings} Portionen: ${r.ingredients.joinToString(", ")}"
             }
 
         val system = "Du bist ein Ernährungsplaner. Antworte ausschließlich mit gültigem JSON, ohne Markdown-Codeblock. Deutsch, keine Gedankenstriche."
@@ -72,7 +72,7 @@ class PlanGenerator(private val context: Context) {
             Zu Hause vorhanden:
             ${pantry.describe()}
 
-            Rezepte aus dem Rezeptbuch (bevorzugt verwenden):
+            Rezepte aus seinem Rezeptbuch (bevorzugt verwenden, Namen exakt übernehmen, Mengen auf seine Portion umrechnen):
             $recipeText
 
             Regeln:

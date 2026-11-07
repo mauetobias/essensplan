@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -152,6 +153,19 @@ fun DataTab() {
                     book = RecipeBook(ctx).all()
                 }
             }
+            val packPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri == null) return@rememberLauncherForActivityResult
+                bookMsg = "Importiere Rezeptpaket …"
+                scope.launch {
+                    bookMsg = withContext(Dispatchers.IO) {
+                        runCatching { ctx.contentResolver.openInputStream(uri)!!.use { RecipeBook(ctx).importPack(it) } }
+                            .fold({ "✓ $it Rezepte mit Foto übernommen" }, { "Import fehlgeschlagen: ${it.message?.take(100)}" })
+                    }
+                    book = RecipeBook(ctx).all()
+                }
+            }
+            GradientButton("📦  Rezeptpaket importieren (ZIP)", brush = Fresh.Sunrise) { packPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+            Spacer(Modifier.height(8.dp))
             GradientButton("🔎  Screenshots automatisch durchsuchen") {
                 scanPerm.launch(if (android.os.Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_IMAGES else android.Manifest.permission.READ_EXTERNAL_STORAGE)
             }
@@ -189,12 +203,16 @@ fun DataTab() {
                         .clickable { RecipeActivity.open(ctx, RecipeBook(ctx).asMeal(r), "Rezeptbuch") }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(34.dp).clip(CircleShape).background(Fresh.Peach), contentAlignment = Alignment.Center) {
-                        Text(mealEmoji(r.name), fontSize = 16.sp)
+                    val thumb = remember(r.image) { r.image?.let { p -> runCatching {
+                        android.graphics.BitmapFactory.decodeFile(p, android.graphics.BitmapFactory.Options().apply { inSampleSize = 6 })?.asImageBitmap() }.getOrNull() } }
+                    if (thumb != null) androidx.compose.foundation.Image(thumb, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)))
+                    else Box(Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(Fresh.Peach), contentAlignment = Alignment.Center) {
+                        Text(mealEmoji(r.name), fontSize = 20.sp)
                     }
                     Column(Modifier.padding(start = 10.dp).weight(1f)) {
                         Text(r.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Text("${r.kcal ?: "?"} kcal · ${r.proteinG ?: "?"} g Protein pro Portion" +
+                        Text("${r.kcal ?: "?"} kcal · ${r.proteinG ?: "?"} g Protein" + (r.minutes?.let { " · $it min" } ?: "") +
                             (if (r.steps.isEmpty()) " · ohne Zubereitung" else ""), color = Fresh.Soft, fontSize = 12.sp)
                     }
                     Text("›", color = Fresh.Soft, fontSize = 20.sp)

@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
+import androidx.compose.ui.graphics.asImageBitmap
 import org.json.JSONObject
 
 /** Ein Gericht zum Nachkochen: Zutaten zum Abhaken, Schritte zum Abhaken, Display bleibt an. */
@@ -40,6 +41,14 @@ class RecipeActivity : ComponentActivity() {
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // beim Kochen nicht ausgehen
         val m = JSONObject(intent.getStringExtra("meal") ?: "{}")
+        // Passendes Rezept aus dem Rezeptbuch: Foto und fehlende Details ergänzen
+        val bookRecipe = cc.maue.essensplan.data.RecipeBook(this).find(m.optString("rezept"))
+        if (bookRecipe != null) {
+            if ((m.optJSONArray("zutaten")?.length() ?: 0) == 0) m.put("zutaten", JSONArray(bookRecipe.ingredients))
+            if ((m.optJSONArray("schritte")?.length() ?: 0) == 0) m.put("schritte", JSONArray(bookRecipe.steps))
+            if (m.optString("bild").isBlank()) m.put("bild", bookRecipe.image ?: "")
+        }
+        val photo = m.optString("bild").takeIf { it.isNotBlank() }?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() }
         val day = intent.getStringExtra("day").orEmpty()
         fun list(a: JSONArray?) = a?.let { (0 until it.length()).map { i -> it.optString(i) } }.orEmpty().filter { it.isNotBlank() }
         val ingredients = list(m.optJSONArray("zutaten"))
@@ -50,6 +59,10 @@ class RecipeActivity : ComponentActivity() {
                 val gotIt = remember { mutableStateListOf<Int>() }
                 val done = remember { mutableStateListOf<Int>() }
                 Column(Modifier.fillMaxSize().background(Fresh.Bg).verticalScroll(rememberScrollState())) {
+                    if (photo != null) androidx.compose.foundation.Image(
+                        bitmap = photo, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().height(280.dp),
+                    )
                     HeroHeader(m.optString("rezept").ifBlank { m.optString("name") }, "$day · ${m.optString("uhrzeit")} · ${m.optString("name")}", mealEmoji(m.optString("name"), m.optString("rezept"))) {
                         Spacer(Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -17,7 +17,11 @@ class YazioClient(private val email: String, private val password: String) {
     private val clientId = "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c"
     private val clientSecret = "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o4"
 
-    data class Recipe(val name: String, val kcal: Int?, val proteinG: Int?, val servings: Int?, val ingredients: List<String>, val steps: List<String> = emptyList())
+    data class Recipe(
+        val name: String, val kcal: Int?, val proteinG: Int?, val servings: Int?, val ingredients: List<String>,
+        val steps: List<String> = emptyList(), val image: String? = null, val minutes: Int? = null,
+        val description: String = "", val carbsG: Int? = null, val fatG: Int? = null,
+    )
 
     private fun token(): String {
         val body = FormBody.Builder()
